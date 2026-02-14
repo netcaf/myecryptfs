@@ -1,0 +1,40 @@
+# ==============================
+# Linux Kernel Module Build Artifacts
+# ==============================
+
+# 内核模块输出文件
+*.ko
+*.o
+*.mod
+*.mod.c
+*.symvers
+*.order
+*.cmd
+
+# 临时编译目录
+Module.symvers
+*.tmp_versions/
+
+# C/CPP 临时文件
+*.gcno
+*.gcda
+*.gcov
+*.d
+
+# 编辑器/IDE 文件
+*.swp
+*~
+.vscode/
+.idea/
+*.bak
+
+# Logs
+*.log
+
+# macOS 文件
+.DS_Store
+
+# Python (如果有)
+__pycache__/
+*.pyc
+
