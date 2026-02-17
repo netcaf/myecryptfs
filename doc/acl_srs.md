@@ -1,4 +1,4 @@
-# 定制 eCryptfs 内部访问控制系统需求设计（v4.0）
+# 定制 eCryptfs 内部访问控制系统需求设计（v5.0）
 
 ---
 
@@ -287,6 +287,328 @@ content=ciphertext
 6. **内容模式**：ACL 覆盖，deny 强制阻止访问  
 7. **继承逻辑**：子对象无 ACL → 继承父目录 ACL  
 8. **Process 匹配**：HASH / INODE_AUTO_RESOLVE / PATH_ONLY 可选  
+
+---
+
+# 十八、Page Cache 双模式隔离设计
+
+---
+
+## 18.1 背景与问题来源
+
+标准 eCryptfs 所有通过挂载点的访问均经过解密，Page Cache 仅存储明文数据。为支持第三维度——内容模式（plaintext / ciphertext），系统需要同一文件对不同授权用户呈现不同的数据视图：
+
+- **明文授权用户**：读写解密后的明文（原有行为）
+- **密文授权用户**：只读访问原始密文（新增行为）
+
+核心矛盾在于：Linux Page Cache 以 inode 为单位全局共享。同一 inode 只有一个 address_space（缓存位置），所有进程共享同一套缓存页面，无法原生支持同一文件的多视图并发访问。
+
+---
+
+## 18.2 关键概念：address_space
+
+`address_space` 是 Linux 内核中 Page Cache 的管理器，代表一个文件在内存中的缓存位置。其核心组成：
+
+- **i_pages（xarray）**：存储该文件所有缓存页面的索引树
+- **a_ops**：定义如何读写页面（readpage / writepage 等）
+- **host**：反向指针，指向所属 inode
+
+默认情况下每个 inode 内嵌一个 address_space（`i_data`），`inode->i_mapping` 指向它。打开文件时 VFS 自动设置 `file->f_mapping = inode->i_mapping`。
+
+**关键特性**：`file->f_mapping` 可以被重定向到任意 `address_space` 实例。内核所有读写路径（`generic_file_read_iter` 等）均通过 `file->f_mapping` 操作缓存，而非直接通过 `inode->i_mapping`。这为双 Cache 设计提供了基础。
+
+---
+
+## 18.3 eCryptfs 分层中的 Cache 位置
+
+eCryptfs 是 stackable filesystem，存在两层独立的 address_space：
+
+| 层次 | address_space 归属 | 缓存内容 | 大小 |
+|------|-------------------|---------|------|
+| Upper（eCryptfs） | `upper inode->i_mapping` | 解密后的明文数据 | 文件逻辑大小 |
+| Lower（ext4/xfs） | `lower inode->i_mapping` | 磁盘原始加密数据 | 含 Header 的物理大小 |
+
+原始 eCryptfs 对 address_space 的直接操作极少，主要仅在 inode 创建时设置 `a_ops`，真正的 Cache 管理由 VFS 层（`filemap.c`）完成。eCryptfs 的 `readpage` / `writepage` 只负责加解密逻辑，不直接操作 address_space 结构体本身。
+
+---
+
+## 18.4 双 Cache 设计方案
+
+### 18.4.1 核心思路
+
+为同一 upper inode 创建两个独立的 address_space，通过 `file->f_mapping` 重定向实现不同用户看到不同的数据视图，同时保持 inode 号不变以确保工具兼容性。
+
+结构示意：
+
+```
+upper inode（inode 号不变）
+  ├── i_mapping  ──→  i_data（明文 address_space）
+  │                    ├── i_pages[0] = Page（明文）
+  │                    ├── i_pages[1] = Page（明文）
+  │                    └── a_ops = ecryptfs_aops_plaintext
+  │
+  └── ciphertext_mapping（密文 address_space，新增）
+                         ├── i_pages[0] = Page（密文）
+                         ├── i_pages[1] = Page（密文）
+                         └── a_ops = ecryptfs_aops_ciphertext
+
+明文用户：file->f_mapping = inode->i_mapping        （解密读写）
+密文用户：file->f_mapping = ciphertext_mapping      （只读密文）
+```
+
+### 18.4.2 访问模式约束
+
+| 访问模式 | 读 | 写 | cache 来源 |
+|---------|----|----|-----------|
+| plaintext（明文授权） | ✅ 解密后明文 | ✅ 加密后写入 | `inode->i_mapping` |
+| ciphertext（密文授权） | ✅ 原始密文 | ❌ 拒绝 | `ciphertext_mapping` |
+| deny | ❌ 拒绝 | ❌ 拒绝 | — |
+
+密文模式强制只读是简化设计的关键约束，消除了写入路径中所有的 cache 一致性复杂度。
+
+### 18.4.3 数据结构扩展
+
+在 `ecryptfs_inode_info` 中新增字段：
+
+```c
+struct ecryptfs_inode_info {
+    struct inode        vfs_inode;
+    struct inode        *lower_inode;
+    struct file         *lower_file;
+    struct mutex        lower_file_mutex;
+
+    /* 新增：密文 cache */
+    struct address_space  *ciphertext_mapping;   /* NULL = 未初始化 */
+    struct mutex           cipher_mapping_mutex; /* 保护初始化竞争 */
+};
+```
+
+两套 address_space_operations：
+
+```c
+/* 明文：原有逻辑不变 */
+const struct address_space_operations ecryptfs_aops_plaintext = {
+    .readpage    = ecryptfs_readpage,       /* 解密 */
+    .writepage   = ecryptfs_writepage,      /* 加密回写 */
+    .write_begin = ecryptfs_write_begin,
+    .write_end   = ecryptfs_write_end,
+};
+
+/* 密文：只读，禁止所有写操作 */
+const struct address_space_operations ecryptfs_aops_ciphertext = {
+    .readpage    = ecryptfs_readpage_ciphertext,  /* 不解密 */
+    /* writepage / write_begin / write_end 均为 NULL */
+};
+```
+
+---
+
+## 18.5 Cache 一致性机制
+
+明文用户可写，密文用户只读，两个 cache 之间需要维护一致性。
+
+### 18.5.1 写入时：主动 Invalidate 密文 Cache
+
+在 `write_begin` 时立即使密文 cache 对应页失效，而非等到 `writepage` 回写时。原因：`write_begin` 之后明文 cache 即为最新视图，此刻开始密文 cache 就已过期。
+
+```c
+static int ecryptfs_write_begin(..., loff_t pos, ...)
+{
+    pgoff_t index = pos >> PAGE_SHIFT;
+
+    /* 立即使密文 cache 对应页失效 */
+    if (inode_info->ciphertext_mapping)
+        invalidate_mapping_pages(
+            inode_info->ciphertext_mapping, index, index);
+
+    /* 原有逻辑 */
+    return ecryptfs_orig_write_begin(...);
+}
+```
+
+### 18.5.2 密文读取时：先刷新明文脏页
+
+密文 `readpage` 调用前，强制将明文 cache 中对应位置的脏页回写到 lower file，确保从 lower file 读取到的是最新加密数据。
+
+```c
+static int ecryptfs_readpage_ciphertext(struct file *file,
+                                        struct page *page)
+{
+    struct inode *inode = page->mapping->host;
+    pgoff_t index = page->index;
+
+    /* 强制刷新明文 cache 对应页的脏数据到 lower file */
+    rc = filemap_write_and_wait_range(
+             inode->i_mapping,
+             (loff_t)index << PAGE_SHIFT,
+             ((loff_t)index << PAGE_SHIFT) + PAGE_SIZE - 1);
+    if (rc) goto out;
+
+    /* 从 lower file 读取原始密文，不解密 */
+    rc = ecryptfs_read_lower_page_segment(
+             page, index, 0, PAGE_SIZE, inode);
+
+    if (!rc) SetPageUptodate(page);
+out:
+    unlock_page(page);
+    return rc;
+}
+```
+
+### 18.5.3 一致性时序保证
+
+| 时刻 | 事件 | 一致性处理 |
+|------|------|-----------|
+| T1 | 明文用户写入 page[N] | `write_begin` 立即 invalidate 密文 cache page[N] |
+| T2 | 密文用户读取 page[N] | `readpage` 先 flush 明文脏页，再从 lower 读新密文 |
+| T3 | 明文脏页异步回写 | `writepage` 加密写入 lower，密文 cache 已在 T1 失效 |
+| T4 | 密文用户再次读取 | 从 lower 读取最新密文，cache 命中返回 |
+
+---
+
+## 18.6 密文 Cache 生命周期管理
+
+密文 address_space 在 inode 生命周期内动态创建和销毁，必须在以下节点正确处理。
+
+### 18.6.1 初始化（延迟创建）
+
+`ciphertext_mapping` 在第一次密文模式 open 时才创建（延迟初始化），未被密文访问的文件零额外开销。使用 `cipher_mapping_mutex` 保护并发初始化竞争。
+
+### 18.6.2 open 时的处理
+
+```c
+static int ecryptfs_open(struct inode *inode, struct file *file)
+{
+    mode = ecryptfs_acl_get_user_mode(uid, lower_ino);
+
+    if (mode == ECRYPTFS_ACCESS_CIPHERTEXT) {
+        /* 拒绝写入模式 */
+        if (file->f_mode & FMODE_WRITE)
+            return -EACCES;
+
+        /* 延迟初始化 ciphertext_mapping */
+        mutex_lock(&inode_info->cipher_mapping_mutex);
+        if (!inode_info->ciphertext_mapping)
+            rc = ecryptfs_init_ciphertext_mapping(inode);
+        mutex_unlock(&inode_info->cipher_mapping_mutex);
+
+        /* 重定向 file->f_mapping */
+        file->f_mapping = inode_info->ciphertext_mapping;
+    }
+    return ecryptfs_do_open(inode, file);
+}
+```
+
+### 18.6.3 truncate 时的处理
+
+明文用户执行 truncate 时，必须同步清理密文 cache，顺序为先密文后明文：
+
+```c
+/* 先清理密文 cache，再 truncate 明文 cache */
+if (inode_info->ciphertext_mapping)
+    truncate_inode_pages(inode_info->ciphertext_mapping, new_length);
+
+truncate_setsize(inode, new_length);   /* 清理明文 cache */
+```
+
+### 18.6.4 evict_inode 时的处理（关键）
+
+inode 驱逐时若密文 cache 页面未清理，会导致内核崩溃（页面仍在 LRU 但 inode 已消失）。必须在明文 cache 清理之前完成：
+
+```c
+static void ecryptfs_evict_inode(struct inode *inode)
+{
+    /* 必须先清理密文 cache 页面 */
+    if (inode_info->ciphertext_mapping)
+        truncate_inode_pages_final(inode_info->ciphertext_mapping);
+
+    /* 再清理明文 cache（原有逻辑）*/
+    truncate_inode_pages_final(&inode->i_data);
+    clear_inode(inode);
+}
+```
+
+### 18.6.5 destroy_inode 时的处理
+
+```c
+static void ecryptfs_destroy_inode(struct inode *inode)
+{
+    /* 页面已在 evict_inode 清理，此处只释放结构体 */
+    if (inode_info->ciphertext_mapping) {
+        kfree(inode_info->ciphertext_mapping);
+        inode_info->ciphertext_mapping = NULL;
+    }
+    /* 原有逻辑 */
+    ecryptfs_put_lower_file(inode);
+    kmem_cache_free(ecryptfs_inode_info_cache, inode_info);
+}
+```
+
+---
+
+## 18.7 与其他 Cache 类型的关系
+
+Linux page 通过 `page->mapping` 指针唯一归属于某个 address_space。不同 address_space 是完全独立的命名空间，不存在交叉。
+
+| Cache 类型 | address_space 来源 | 是否与本方案冲突 | 原因 |
+|-----------|-------------------|----------------|------|
+| Swap Cache | `swapper_spaces[]`（全局独立） | ✅ 不冲突 | 完全不同的 address_space |
+| Lower fs Cache | `lower inode->i_mapping` | ✅ 不冲突 | 属于下层 ext4/xfs inode |
+| 其他文件 Cache | 各自 `inode->i_mapping` | ✅ 不冲突 | 不同 inode |
+| mmap 匿名页 | `anon_vma` 或 NULL | ✅ 不冲突 | mapping 标志位不同 |
+| 明文与密文互相 | 同一 inode 两个 mapping | ⚠️ 需主动管理 | 写入时 invalidate 处理 |
+
+mmap 访问通过 `file->f_mapping` 建立 VMA 映射，密文用户的 mmap 会关联到 `ciphertext_mapping`，缺页时自动调用 `ecryptfs_readpage_ciphertext`，无需额外处理。
+
+Direct I/O（O_DIRECT）会绕过 page cache，破坏 cache 隔离机制。密文模式下应在 `a_ops` 中不提供 `direct_IO` 接口，或在 open 时拒绝 `O_DIRECT` 标志。
+
+---
+
+## 18.8 实现修改点汇总
+
+### 18.8.1 需要修改的现有函数
+
+| 函数 | 文件 | 修改内容 |
+|------|------|---------|
+| `ecryptfs_open` | file.c | ACL 查询 + 强制只读检查 + 重定向 `file->f_mapping` |
+| `ecryptfs_write_begin` | mmap.c | 写入前 invalidate 密文 cache 对应页 |
+| `ecryptfs_truncate` | inode.c | 同步清理密文 cache（先密文后明文） |
+| `ecryptfs_evict_inode` | super.c | 先清理密文 cache 页面再执行原有逻辑 |
+| `ecryptfs_destroy_inode` | super.c | 释放 `ciphertext_mapping` 内存 |
+| `ecryptfs_inode_info` | ecryptfs_kernel.h | 新增 `ciphertext_mapping` 和 `cipher_mapping_mutex` 字段 |
+
+### 18.8.2 需要新增的函数
+
+| 函数 | 文件 | 功能 |
+|------|------|------|
+| `ecryptfs_init_ciphertext_mapping` | inode.c | 延迟初始化密文 address_space，设置 a_ops |
+| `ecryptfs_readpage_ciphertext` | mmap.c | 密文读取：先刷明文脏页，再读 lower 不解密 |
+| `ecryptfs_aops_ciphertext`（结构体） | mmap.c | 密文模式的 address_space_operations，只含 readpage |
+
+---
+
+## 18.9 性能影响
+
+| 场景 | 性能影响 | 说明 |
+|------|---------|------|
+| 明文读（无密文访问者） | 零开销 | `ciphertext_mapping` 未初始化，无任何额外操作 |
+| 明文写（无密文访问者） | 零开销 | `write_begin` 中 `ciphertext_mapping == NULL` 直接跳过 |
+| 明文写（有密文访问者） | 微小开销 | `invalidate_mapping_pages` 一次哈希查找 |
+| 密文读（首次） | 一次额外 flush | `filemap_write_and_wait_range` 等待明文脏页回写 |
+| 密文读（cache 命中） | 零额外开销 | 直接从 `ciphertext_mapping->i_pages` 返回 |
+| 内存占用 | 约 200 字节/文件 | `sizeof(address_space)`，仅被密文访问的文件才分配 |
+
+密文访问是低频的审计/备份场景，首次读取时的 flush 开销可接受。高频路径（明文读写）在无密文访问者时零额外开销。
+
+---
+
+## 18.10 约束与限制
+
+- 密文模式强制只读，open 时携带 `FMODE_WRITE` 将返回 `-EACCES`
+- 密文 cache 页面永远不产生脏页，内存回收路径安全
+- 不支持 `O_DIRECT` 密文访问（破坏 cache 隔离）
+- `ciphertext_mapping->host` 指向 upper inode，与 `inode->i_mapping->host` 相同；写路径已被禁止，不触发 `host->i_mapping` 反查的一致性问题
+- 所有修改限定在 eCryptfs 模块内部，不修改 VFS 或其他内核代码
 
 ---
 
