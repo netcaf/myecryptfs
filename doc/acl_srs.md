@@ -1,4 +1,4 @@
-# 定制 eCryptfs 内部访问控制系统需求设计（v5.0）
+# 定制 eCryptfs 内部访问控制系统需求设计（v6.0）
 
 ---
 
@@ -37,6 +37,8 @@ Access Result (最终访问行为)
 
 > 例如：vim 只读查看密文 → 即便原文件可写，最终访问只读并返回密文
 
+**约束**：`content=ciphertext` 时，write 权限自动无效。即使 ACL 声明 `permission=rw`，最终只有 `r`。这是由密文 Cache 隔离机制在内核层强制保证的，不依赖规则配置是否正确。
+
 ---
 
 ## 三、规则维度
@@ -45,36 +47,38 @@ Access Result (最终访问行为)
 
 支持任意组合：
 
-- **user**：内核真实 UID (`kuid`)  
-- **group**：内核真实 GID (`kgid`)  
-- **process**：可执行文件 inode  
+- **user**：内核真实 UID (`kuid`)
+- **group**：内核真实 GID (`kgid`)
+- **process**：可执行文件 inode
 
 **注意**：
 
-- 路径仅用于规则定义和展示  
-- namespace 与 mount 无关  
+- 路径仅用于规则定义和展示
+- namespace 与 mount 无关
 - 对容器友好
 
 ---
 
 ### 2️⃣ 文件操作权限
 
-- `r`（read）  
-- `w`（write）  
-- `x`（execute）  
+- `r`（read）
+- `w`（write）
+- `x`（execute）
 
 **冲突处理**：
 
-- ACL **不能提升系统权限**  
-- 最终权限 = 系统权限 ∩ ACL 权限  
+- ACL **不能提升系统权限**
+- 最终权限 = 系统权限 ∩ ACL 权限
 
 ---
 
 ### 3️⃣ 内容模式（Content Mode）
 
-- `plaintext`（明文）  
-- `ciphertext`（密文）  
-- `deny`（拒绝）  
+定义该主体对该文件的**访问结果**，三者互斥，规则中 `content` 字段取其一：
+
+- `plaintext`：允许访问，返回解密后的明文
+- `ciphertext`：允许访问，返回原始密文（**强制只读**，见第二章约束）
+- `deny`：拒绝访问，直接阻止，不返回任何数据
 
 > ACL 内容模式覆盖系统原始内容模式，deny 强制阻止访问
 
@@ -82,8 +86,8 @@ Access Result (最终访问行为)
 
 ## 四、对象中心模型
 
-- 规则作用于 **被访问对象 inode**  
-- 不存在全局或 namespace 差异策略  
+- 规则作用于 **被访问对象 inode**
+- 不存在全局或 namespace 差异策略
 - 决策只依赖 inode + 当前进程 cred
 
 ---
@@ -104,9 +108,18 @@ Access Result (最终访问行为)
   - 二进制内存结构，高效 pointer 遍历
   - 按 priority 排序，First-match 或 Strict aggregation
   - 支持快速匹配，避免重复规则
-- 列表长度可控，确保高频访问场景性能
+- 列表长度上限：**每个 ACL ID 最多 64 条规则**
 
-### 2️⃣ 持久化存储
+### 2️⃣ xattr 格式规范
+
+- **xattr key**：`trusted.ecryptfs_acl_id`
+- **类型**：`uint16_t`（2字节，大端序）
+- **范围**：`0x0001` ~ `0xFFFF`（`0x0000` 保留，表示未分配）
+- **分配策略**：单调递增；溢出后从 `0x0001` 起轮询查找未使用的 ID
+- **权限要求**：`trusted.*` namespace 需要 `CAP_SYS_ADMIN`
+- **最大并发 ACL ID 数**：65535 个
+
+### 3️⃣ 持久化存储
 
 - ACL ID 与规则列表可持久化，重启后恢复
 - 格式：
@@ -119,6 +132,9 @@ Access Result (最终访问行为)
   - 文件权限严格控制 (`root:root 600`)
   - CRUD 操作通过模块接口，原子更新文件和内核缓存
   - JSON 仅供运维/查看，不直接影响内核匹配
+- **一致性保障**：
+  - 若 ACL ID 对应规则不存在（文件缺失/损坏）→ 使用默认规则（fallback）并记录审计日志
+  - 原子更新中途失败（如断电）→ 下次加载时检测规则文件完整性，降级使用默认规则
 
 ---
 
@@ -126,9 +142,9 @@ Access Result (最终访问行为)
 
 ### 1️⃣ 列表结构
 
-- **线性列表 + 优先级字段**  
-- 可以优化为 **分类索引**（按 user/group/process 分类）  
-- 列表长度受限，高性能场景保证快速匹配
+- **线性列表 + 优先级字段**
+- 可以优化为 **分类索引**（按 user/group/process 分类）
+- **列表长度上限：每个 ACL ID 最多 64 条规则**，超出拒绝添加并返回错误
 
 ### 2️⃣ 决策模式
 
@@ -139,28 +155,36 @@ Access Result (最终访问行为)
 
 - **推荐**：First-match + priority → 简单、可预测、易运维
 
-### 3️⃣ 重复规则处理
+### 3️⃣ 主体匹配逻辑
 
-- **完全重复** → 去重  
-- **部分重复** → 保留，但明确优先级  
+主体三个字段（user / group / process）之间为 **AND 关系**：规则匹配当且仅当三个维度**同时满足**。
+
+- `*` 表示该维度不参与过滤，匹配任意值（等同于该维度通配）
+- 示例：`process=/usr/bin/vim, user=alice, group=*` 表示：vim 进程 **且** alice 用户 **且** 任意组
+
+### 4️⃣ 重复规则处理
+
+- **完全重复** → 去重
+- **部分重复** → 保留，但明确优先级
 - 默认规则优先级最低，仅存在一条
 
 ---
 
 ## 七、继承模型
 
-- 子对象无 ACL → 继承父目录 ACL  
-- 子对象有 ACL → 使用自身 ACL，忽略父 ACL  
-- 简化逻辑，提高性能
-- 对新文件和新目录影响
+- 子对象无 ACL → **动态继承**父目录 ACL（每次访问时向上查找，不复制）
+- 子对象有 ACL → 使用自身 ACL，忽略父 ACL
+- **查找深度**：向上遍历直到 eCryptfs 挂载点根目录为止，不跨越挂载点
+- 若直到根目录仍无 ACL → 使用默认规则
+- 对新创建的文件和目录同样适用（创建时不自动复制父 ACL）
 
 ---
 
 ## 八、Namespace 处理
 
-- ACL 基于 **内核真实 UID/GID**  
-- 不存 user namespace 信息  
-- 不区分 mount namespace  
+- ACL 基于 **内核真实 UID/GID**
+- 不存 user namespace 信息
+- 不区分 mount namespace
 - 决策只依赖 inode + current->cred
 
 ---
@@ -177,70 +201,84 @@ Access Result (最终访问行为)
 
 - 规则展示层始终使用可读路径，不显示仅数字 inode
 
+> 注：HASH 模式的 hash 计算时机、INODE_AUTO_RESOLVE 的自动解析触发条件与失败处理，待后续细化。
+
 ---
 
 ## 十、默认规则（全空规则）
 
-- 三要素全空规则仅存在 **唯一一条**  
-- 用作 **系统默认策略 fallback**  
-- 优先级最低，匹配所有未命中的访问请求  
-- 安全性：
-  - 默认黑名单（deny / ciphertext / r）  
-  - 禁止提升系统权限  
+- 三要素全空规则仅存在 **唯一一条**
+- 用作 **系统默认策略 fallback**
+- 优先级最低，匹配所有未命中的访问请求
+- **默认内容模式**：`deny`（安全导向，拒绝所有未明确授权的访问）
+- 禁止提升系统权限
+- **存储位置**：随 ACL 规则文件一同持久化，作为 ACL ID `0x0000` 的特殊保留条目；每个 eCryptfs 挂载点共享同一份默认规则
 
 ---
 
 ## 十一、访问决策流程
 
-1. 获取被访问 inode  
-2. 获取 ACL ID（xattr）  
-3. 若无 ACL → 查父目录  
-4. 获取规则列表  
-5. 获取当前进程 cred（kuid/kgid）  
-6. 获取当前进程 executable inode  
-7. 按匹配模式（HASH / INODE / PATH）匹配规则  
-8. 权限计算：`final_permission = system_permission ∩ ACL_permission`  
-9. 内容模式：ACL 覆盖  
-10. First-match 或 aggregation 决策  
-11. 返回最终访问结果  
-12. INODE_AUTO_RESOLVE：如 inode 不匹配，可用保存路径解析更新规则
+1. 获取被访问 inode
+2. 获取 ACL ID（xattr `trusted.ecryptfs_acl_id`）
+3. 若无 ACL → 向上查找父目录，直到挂载点根目录
+4. 仍无 ACL → 使用默认规则
+5. 获取规则列表
+6. 获取当前进程 cred（kuid/kgid）
+7. 获取当前进程 executable inode
+8. 按匹配模式（HASH / INODE / PATH）匹配规则
+   - INODE_AUTO_RESOLVE：若 inode 不匹配，用保存路径重新解析，更新规则缓存后重新匹配
+9. 权限计算：`final_permission = system_permission ∩ ACL_permission`
+10. 内容模式：ACL 覆盖（`content=ciphertext` 时强制去除 write 权限）
+11. First-match 或 aggregation 决策
+12. 返回最终访问结果
 
 ---
 
 ## 十二、持久化要求
 
-- 规则可持久化，重启后仍生效  
-- ACL ID 与规则表一致  
-- 不依赖 namespace 或 mount 状态  
+- 规则可持久化，重启后仍生效
+- ACL ID 与规则表一致
+- 不依赖 namespace 或 mount 状态
 - 支持自动更新 inode 或 binary
+- 启动加载机制、加载失败处理待后续细化
 
 ---
 
 ## 十三、性能目标
 
-- 高频 open/read/write 场景仍高性能  
-- 支持内核缓存  
-- xattr 小而轻量  
-- 列表匹配复杂度可控
+- 高频 open/read/write 场景仍高性能
+- 支持内核缓存
+- xattr 小而轻量（2字节 ACL ID）
+- 列表匹配复杂度可控（最多 64 条线性遍历）
+
+**量化指标（参考）**：
+
+| 指标 | 目标值 | 条件 |
+|------|--------|------|
+| ACL 决策延迟 | < 1μs（p99） | 热路径，规则数 ≤ 64 |
+| 每条规则内存占用 | ≤ 128 字节 | 含主体、权限、内容模式等字段 |
+| xattr 大小 | 2 字节 | ACL ID（uint16_t） |
+| 最大规则条数/ACL ID | 64 条 | 超出拒绝添加 |
 
 ---
 
 ## 十四、边界与限制
 
-- 不替代 SELinux  
-- 不实现全局 LSM  
-- 不支持 namespace 差异策略  
-- 不支持多 ACL 叠加  
-- 不支持复杂父子规则 merge  
+- 不替代 SELinux
+- 不实现全局 LSM
+- 不支持 namespace 差异策略
+- 不支持多 ACL 叠加
+- 不支持复杂父子规则 merge
 - PATH_ONLY 模式安全性低，仅用于调试或兼容
+- `content=ciphertext` 强制只读，内核层保证，不可通过规则绕过
 
 ---
 
 ## 十五、审计与运维可读性
 
-- 保存路径用于展示和日志  
-- ACL 日志显示 human-readable 路径 + dev/ino  
-- 用户操作/查询界面不直接显示数字 inode  
+- 保存路径用于展示和日志
+- ACL 日志显示 human-readable 路径 + dev/ino
+- 用户操作/查询界面不直接显示数字 inode
 
 ---
 
@@ -255,7 +293,7 @@ group=*
 permission=r
 content=ciphertext
 
-# grep 可读写明文
+# grep 可读写明文（alice 且 staff 组）
 priority=50
 process=/usr/bin/grep
 user=alice
@@ -263,34 +301,36 @@ group=staff
 permission=rw
 content=plaintext
 
-# 默认规则（全空）
+# 默认规则（全空，fallback）
 priority=0
 process=*
 user=*
 group=*
 permission=r
-content=ciphertext
+content=deny
 ```
 
-- First-match wins 按 priority 高到低  
-- 默认规则仅在前面规则不匹配时生效  
+- First-match wins 按 priority 高到低
+- 主体三字段为 AND 关系，`*` 表示该维度通配
+- 默认规则仅在前面规则不匹配时生效
 
 ---
 
 ## 十七、总结设计要点
 
-1. **ACL 列表**：每 inode 对应唯一 ACL ID → 规则列表  
-2. **匹配模式**：First-match + priority 或 Strict aggregation  
-3. **重复规则**：完全重复去重，部分重复保留并明确优先级  
-4. **默认规则**：仅一条全空规则，用作 fallback  
-5. **权限计算**：最终权限 = 系统权限 ∩ ACL 权限  
-6. **内容模式**：ACL 覆盖，deny 强制阻止访问  
-7. **继承逻辑**：子对象无 ACL → 继承父目录 ACL  
-8. **Process 匹配**：HASH / INODE_AUTO_RESOLVE / PATH_ONLY 可选  
+1. **ACL 列表**：每 inode 对应唯一 ACL ID → 规则列表，上限 64 条
+2. **匹配模式**：First-match + priority 或 Strict aggregation
+3. **重复规则**：完全重复去重，部分重复保留并明确优先级
+4. **默认规则**：仅一条全空规则，content=deny，用作 fallback
+5. **权限计算**：最终权限 = 系统权限 ∩ ACL 权限
+6. **内容模式**：ACL 覆盖，deny 强制阻止访问，ciphertext 强制只读
+7. **继承逻辑**：动态继承，向上查找至挂载点根目录
+8. **Process 匹配**：HASH / INODE_AUTO_RESOLVE / PATH_ONLY 可选
+9. **主体匹配**：user/group/process 三字段 AND 关系，`*` 为通配
 
 ---
 
-# 十八、Page Cache 双模式隔离设计
+## 十八、Page Cache 双模式隔离设计
 
 ---
 
@@ -361,7 +401,7 @@ upper inode（inode 号不变）
 | 访问模式 | 读 | 写 | cache 来源 |
 |---------|----|----|-----------|
 | plaintext（明文授权） | ✅ 解密后明文 | ✅ 加密后写入 | `inode->i_mapping` |
-| ciphertext（密文授权） | ✅ 原始密文 | ❌ 拒绝 | `ciphertext_mapping` |
+| ciphertext（密文授权） | ✅ 原始密文 | ❌ 拒绝（内核层强制） | `ciphertext_mapping` |
 | deny | ❌ 拒绝 | ❌ 拒绝 | — |
 
 密文模式强制只读是简化设计的关键约束，消除了写入路径中所有的 cache 一致性复杂度。
@@ -397,7 +437,7 @@ const struct address_space_operations ecryptfs_aops_plaintext = {
 /* 密文：只读，禁止所有写操作 */
 const struct address_space_operations ecryptfs_aops_ciphertext = {
     .readpage    = ecryptfs_readpage_ciphertext,  /* 不解密 */
-    /* writepage / write_begin / write_end 均为 NULL */
+    /* writepage / write_begin / write_end 均为 NULL，内核层禁止写入 */
 };
 ```
 
@@ -455,6 +495,8 @@ out:
 }
 ```
 
+**关于锁竞争**：`filemap_write_and_wait_range` 操作的是明文 `inode->i_mapping` 中的页面，而当前持有的是密文 `ciphertext_mapping` 中 page[N] 的锁。两个 mapping 的页面是完全独立的内存对象（不同 address_space，不同 page 指针），不存在同一把锁被重复获取的情况，**不会产生死锁**。
+
 ### 18.5.3 一致性时序保证
 
 | 时刻 | 事件 | 一致性处理 |
@@ -474,6 +516,30 @@ out:
 
 `ciphertext_mapping` 在第一次密文模式 open 时才创建（延迟初始化），未被密文访问的文件零额外开销。使用 `cipher_mapping_mutex` 保护并发初始化竞争。
 
+```c
+static int ecryptfs_init_ciphertext_mapping(struct inode *inode)
+{
+    struct ecryptfs_inode_info *inode_info =
+        ecryptfs_inode_to_private(inode);
+    struct address_space *mapping;
+
+    mapping = kzalloc(sizeof(struct address_space), GFP_KERNEL);
+    if (!mapping)
+        return -ENOMEM;
+
+    /* 初始化 address_space 内部结构（xarray、锁等） */
+    address_space_init_once(mapping);
+
+    /* host 指向同一个 upper inode */
+    mapping->host    = inode;
+    mapping->a_ops   = &ecryptfs_aops_ciphertext;
+    mapping->gfp_mask = GFP_HIGHUSER_MOVABLE;
+
+    inode_info->ciphertext_mapping = mapping;
+    return 0;
+}
+```
+
 ### 18.6.2 open 时的处理
 
 ```c
@@ -482,22 +548,30 @@ static int ecryptfs_open(struct inode *inode, struct file *file)
     mode = ecryptfs_acl_get_user_mode(uid, lower_ino);
 
     if (mode == ECRYPTFS_ACCESS_CIPHERTEXT) {
-        /* 拒绝写入模式 */
+        /* 拒绝写入模式：内核层强制只读 */
         if (file->f_mode & FMODE_WRITE)
             return -EACCES;
+
+        /* 同时拒绝 O_DIRECT：会绕过 cache 隔离机制 */
+        if (file->f_flags & O_DIRECT)
+            return -EINVAL;
 
         /* 延迟初始化 ciphertext_mapping */
         mutex_lock(&inode_info->cipher_mapping_mutex);
         if (!inode_info->ciphertext_mapping)
             rc = ecryptfs_init_ciphertext_mapping(inode);
         mutex_unlock(&inode_info->cipher_mapping_mutex);
+        if (rc)
+            return rc;
 
-        /* 重定向 file->f_mapping */
+        /* 重定向 file->f_mapping 到密文 cache */
         file->f_mapping = inode_info->ciphertext_mapping;
     }
     return ecryptfs_do_open(inode, file);
 }
 ```
+
+**mmap 写入保障**：密文模式 open 已拒绝 `FMODE_WRITE`，因此后续 `mmap(MAP_SHARED|PROT_WRITE)` 在 VFS 层检查 `file->f_mode` 时会被拒绝，无需在 mmap 路径额外处理。密文用户的只读 mmap（`PROT_READ`）通过 `file->f_mapping` 自动关联到 `ciphertext_mapping`，缺页时调用 `ecryptfs_readpage_ciphertext`，行为正确。
 
 ### 18.6.3 truncate 时的处理
 
@@ -518,7 +592,10 @@ inode 驱逐时若密文 cache 页面未清理，会导致内核崩溃（页面�
 ```c
 static void ecryptfs_evict_inode(struct inode *inode)
 {
-    /* 必须先清理密文 cache 页面 */
+    struct ecryptfs_inode_info *inode_info =
+        ecryptfs_inode_to_private(inode);
+
+    /* 必须先清理密文 cache 页面，顺序不可颠倒 */
     if (inode_info->ciphertext_mapping)
         truncate_inode_pages_final(inode_info->ciphertext_mapping);
 
@@ -533,7 +610,10 @@ static void ecryptfs_evict_inode(struct inode *inode)
 ```c
 static void ecryptfs_destroy_inode(struct inode *inode)
 {
-    /* 页面已在 evict_inode 清理，此处只释放结构体 */
+    struct ecryptfs_inode_info *inode_info =
+        ecryptfs_inode_to_private(inode);
+
+    /* 页面已在 evict_inode 中清理，此处只释放结构体内存 */
     if (inode_info->ciphertext_mapping) {
         kfree(inode_info->ciphertext_mapping);
         inode_info->ciphertext_mapping = NULL;
@@ -558,9 +638,7 @@ Linux page 通过 `page->mapping` 指针唯一归属于某个 address_space。�
 | mmap 匿名页 | `anon_vma` 或 NULL | ✅ 不冲突 | mapping 标志位不同 |
 | 明文与密文互相 | 同一 inode 两个 mapping | ⚠️ 需主动管理 | 写入时 invalidate 处理 |
 
-mmap 访问通过 `file->f_mapping` 建立 VMA 映射，密文用户的 mmap 会关联到 `ciphertext_mapping`，缺页时自动调用 `ecryptfs_readpage_ciphertext`，无需额外处理。
-
-Direct I/O（O_DIRECT）会绕过 page cache，破坏 cache 隔离机制。密文模式下应在 `a_ops` 中不提供 `direct_IO` 接口，或在 open 时拒绝 `O_DIRECT` 标志。
+Direct I/O（`O_DIRECT`）会绕过 page cache，破坏 cache 隔离机制。密文模式在 open 时拒绝 `O_DIRECT` 标志（返回 `-EINVAL`），从入口处彻底封堵。
 
 ---
 
@@ -570,7 +648,7 @@ Direct I/O（O_DIRECT）会绕过 page cache，破坏 cache 隔离机制。密�
 
 | 函数 | 文件 | 修改内容 |
 |------|------|---------|
-| `ecryptfs_open` | file.c | ACL 查询 + 强制只读检查 + 重定向 `file->f_mapping` |
+| `ecryptfs_open` | file.c | ACL 查询 + 强制只读/O_DIRECT 检查 + 重定向 `file->f_mapping` |
 | `ecryptfs_write_begin` | mmap.c | 写入前 invalidate 密文 cache 对应页 |
 | `ecryptfs_truncate` | inode.c | 同步清理密文 cache（先密文后明文） |
 | `ecryptfs_evict_inode` | super.c | 先清理密文 cache 页面再执行原有逻辑 |
@@ -581,7 +659,7 @@ Direct I/O（O_DIRECT）会绕过 page cache，破坏 cache 隔离机制。密�
 
 | 函数 | 文件 | 功能 |
 |------|------|------|
-| `ecryptfs_init_ciphertext_mapping` | inode.c | 延迟初始化密文 address_space，设置 a_ops |
+| `ecryptfs_init_ciphertext_mapping` | inode.c | 延迟初始化密文 address_space，设置 host / a_ops / gfp_mask |
 | `ecryptfs_readpage_ciphertext` | mmap.c | 密文读取：先刷明文脏页，再读 lower 不解密 |
 | `ecryptfs_aops_ciphertext`（结构体） | mmap.c | 密文模式的 address_space_operations，只含 readpage |
 
@@ -605,11 +683,31 @@ Direct I/O（O_DIRECT）会绕过 page cache，破坏 cache 隔离机制。密�
 ## 18.10 约束与限制
 
 - 密文模式强制只读，open 时携带 `FMODE_WRITE` 将返回 `-EACCES`
+- 密文模式拒绝 `O_DIRECT`，open 时携带 `O_DIRECT` 将返回 `-EINVAL`
 - 密文 cache 页面永远不产生脏页，内存回收路径安全
-- 不支持 `O_DIRECT` 密文访问（破坏 cache 隔离）
-- `ciphertext_mapping->host` 指向 upper inode，与 `inode->i_mapping->host` 相同；写路径已被禁止，不触发 `host->i_mapping` 反查的一致性问题
+- `ciphertext_mapping->host` 指向 upper inode，与 `inode->i_mapping->host` 相同；写路径已在 open 层拦截，不触发 `host->i_mapping` 反查的一致性问题
+- mmap 写入由 `FMODE_WRITE` 拒绝在 open 层保障，无需在 mmap 路径额外处理
 - 所有修改限定在 eCryptfs 模块内部，不修改 VFS 或其他内核代码
 
 ---
 
-该版本整合了 **权限冲突处理、默认规则、ACL 列表设计、继承、namespace 兼容性、process 匹配模式** 等讨论结果，可作为实现和运维参考。
+## 附：待定项清单
+
+以下问题在当前版本中标记为待定，需后续讨论确认后补充：
+
+| 编号 | 问题 | 影响范围 |
+|------|------|---------|
+| 问题7 | 继承模型：动态 vs 静态最终确认 | 第七章 |
+| 问题9 | INODE_AUTO_RESOLVE 自动解析触发条件与失败处理 | 第九章 |
+| 问题10 | HASH 模式：hash 计算时机、内核计算性能、缓存策略 | 第九章 |
+| 问题11 | 默认规则存储位置的最终确认 | 第十章 |
+| 问题14 | ACL 查询并发处理与锁策略 | 第十一章 |
+| 问题15 | 启动加载机制：触发方式、加载失败处理 | 第十二章 |
+| 缺失-管理接口 | ioctl/netlink/sysfs 接口形式、命令格式、权限要求 | 新章节 |
+| 缺失-热更新 | 运行时 ACL 修改对已打开文件的影响与处理策略 | 新章节 |
+| 缺失-错误处理 | 各模块错误码定义、传播路径、用户可见错误信息 | 新章节 |
+| 缺失-日志格式 | 审计日志格式、级别、输出位置 | 第十五章 |
+
+---
+
+*v6.0 更新说明：补充 Content Mode 语义说明（问题1/2）、xattr 格式规范（问题3）、Subject AND 匹配逻辑（问题5）、规则上限 64 条（问题6）、动态继承与查找深度（问题8）、默认规则语义修正（问题12）、性能量化指标（问题13）、Cache 章节补充初始化代码/死锁说明/mmap 保障链条/O_DIRECT 拦截（问题17/18/19）。待定项见附录。*
