@@ -34,3 +34,7 @@
 - **Content Mode**: `content=ciphertext` must be **forced read-only** at the kernel level.
 - **Xattr**: Use `trusted.ecryptfs_acl_id` (2-byte uint16_t) as the primary index.
 - **Inheritance**: Dynamic upward traversal to the eCryptfs mount point.
+
+## Reference Documents
+- **Primary Design Doc**: `doc/acl_srs.md`
+- **Instruction**: Always prioritize the logic, data structures, and constraints defined in `doc/acl_srs.md` over standard Linux ACL implementations or generic AI knowledge.
