@@ -356,6 +356,9 @@ struct ecryptfs_sb_info {
 	struct ecryptfs_mount_crypt_stat mount_crypt_stat;
 	/* ACL: per-mount rule table; NULL = no ACL configured (SRS §5.3) */
 	struct ecryptfs_acl_table	*acl_table;
+	struct super_block		*upper_sb;	/* back-pointer to upper sb  */
+	struct dentry			*acl_debugfs_dir; /* per-mount debugfs dir */
+	u32				 acl_mount_idx;	/* sequential mount index    */
 };
 
 /* file private data. */

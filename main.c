@@ -516,6 +516,7 @@ static struct dentry *ecryptfs_mount(struct file_system_type *fs_type, int flags
 		goto out1;
 
 	ecryptfs_set_superblock_private(s, sbi);
+	ecryptfs_acl_mount_setup(sbi, s);
 
 	/* ->kill_sb() will take care of sbi after that point */
 	sbi = NULL;
@@ -625,6 +626,14 @@ out:
 static void ecryptfs_kill_block_super(struct super_block *sb)
 {
 	struct ecryptfs_sb_info *sb_info = ecryptfs_superblock_to_private(sb);
+
+	/*
+	 * Remove debugfs entries first: debugfs_remove_recursive() waits
+	 * for in-flight operations, so no debugfs callback can race with
+	 * kill_anon_super() tearing down the inode list.
+	 */
+	if (sb_info)
+		ecryptfs_acl_mount_teardown(sb_info);
 	kill_anon_super(sb);
 	if (!sb_info)
 		return;
@@ -860,6 +869,7 @@ static int __init ecryptfs_init(void)
 		printk(KERN_ERR "Failed to register filesystem\n");
 		goto out_destroy_crypto;
 	}
+	ecryptfs_acl_global_init();
 	if (ecryptfs_verbosity > 0)
 		printk(KERN_CRIT "eCryptfs verbosity set to %d. Secret values "
 			"will be written to the syslog!\n", ecryptfs_verbosity);
@@ -887,6 +897,7 @@ static void __exit ecryptfs_exit(void)
 	if (rc)
 		printk(KERN_ERR "Failure whilst attempting to destroy crypto; "
 		       "rc = [%d]\n", rc);
+	ecryptfs_acl_global_exit();
 	ecryptfs_release_messaging();
 	ecryptfs_destroy_kthread();
 	do_sysfs_unregistration();

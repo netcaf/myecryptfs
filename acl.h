@@ -202,4 +202,13 @@ void ecryptfs_acl_invalidate_cipher_page(struct inode *inode, pgoff_t index);
 /* address_space_operations for the ciphertext cache (SRS §18.4.3) */
 extern const struct address_space_operations ecryptfs_aops_ciphertext;
 
+/* Module-level debugfs init/exit */
+int  ecryptfs_acl_global_init(void);
+void ecryptfs_acl_global_exit(void);
+
+/* Per-mount setup/teardown (allocates table + creates debugfs) */
+void ecryptfs_acl_mount_setup(struct ecryptfs_sb_info *sbi,
+			      struct super_block *sb);
+void ecryptfs_acl_mount_teardown(struct ecryptfs_sb_info *sbi);
+
 #endif /* ECRYPTFS_ACL_H */
