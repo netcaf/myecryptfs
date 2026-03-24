@@ -235,6 +235,54 @@ static int ecryptfs_open(struct inode *inode, struct file *file)
 	rc = read_or_initialize_metadata(ecryptfs_dentry);
 	if (rc)
 		goto out_put;
+
+	/*
+	 * ACL content-mode decision (SRS §11, §18.6.2).
+	 * ecryptfs_acl_check() is a no-op pass-through in Phase 1
+	 * (when no ACL table is configured), so existing behaviour is
+	 * fully preserved.
+	 */
+	{
+		struct ecryptfs_acl_decision decision;
+		struct ecryptfs_inode_info *inode_info =
+			ecryptfs_inode_to_private(inode);
+
+		rc = ecryptfs_acl_check(inode, MAY_READ, &decision);
+		if (rc)
+			goto out_put;
+
+		if (decision.content == ECRYPTFS_CONTENT_DENY) {
+			rc = -EACCES;
+			goto out_put;
+		}
+
+		file_info->content_mode = decision.content;
+
+		if (decision.content == ECRYPTFS_CONTENT_CIPHERTEXT) {
+			/* Ciphertext mode: write and O_DIRECT are banned
+			 * at the kernel level (SRS §18.4.2, §18.10) */
+			if (file->f_mode & FMODE_WRITE) {
+				rc = -EACCES;
+				goto out_put;
+			}
+			if (file->f_flags & O_DIRECT) {
+				rc = -EINVAL;
+				goto out_put;
+			}
+
+			/* Lazily initialise the cipher address_space */
+			mutex_lock(&inode_info->cipher_mapping_mutex);
+			if (!inode_info->ciphertext_mapping)
+				rc = ecryptfs_acl_init_ciphertext_mapping(inode);
+			mutex_unlock(&inode_info->cipher_mapping_mutex);
+			if (rc)
+				goto out_put;
+
+			/* Redirect this fd's page cache to the cipher mapping */
+			file->f_mapping = inode_info->ciphertext_mapping;
+		}
+	}
+
 	ecryptfs_printk(KERN_DEBUG, "inode w/ addr = [0x%p], i_ino = "
 			"[0x%.16lx] size: [0x%.16llx]\n", inode, inode->i_ino,
 			(unsigned long long)i_size_read(inode));

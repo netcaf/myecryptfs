@@ -48,6 +48,10 @@ static struct inode *ecryptfs_alloc_inode(struct super_block *sb)
 	mutex_init(&inode_info->lower_file_mutex);
 	atomic_set(&inode_info->lower_file_count, 0);
 	inode_info->lower_file = NULL;
+	/* ACL fields — cipher mapping created lazily on first cipher open */
+	inode_info->ciphertext_mapping = NULL;
+	mutex_init(&inode_info->cipher_mapping_mutex);
+	inode_info->cached_acl_id = ECRYPTFS_ACL_ID_NONE;
 	inode = &inode_info->vfs_inode;
 out:
 	return inode;
@@ -76,6 +80,8 @@ static void ecryptfs_destroy_inode(struct inode *inode)
 
 	inode_info = ecryptfs_inode_to_private(inode);
 	BUG_ON(inode_info->lower_file);
+	/* Pages already purged in evict_inode; free the struct (SRS §18.6.5) */
+	ecryptfs_acl_destroy_ciphertext_mapping(inode);
 	ecryptfs_destroy_crypt_stat(&inode_info->crypt_stat);
 }
 
@@ -118,6 +124,8 @@ static int ecryptfs_statfs(struct dentry *dentry, struct kstatfs *buf)
  */
 static void ecryptfs_evict_inode(struct inode *inode)
 {
+	/* Purge cipher cache first; order is mandatory (SRS §18.6.4) */
+	ecryptfs_acl_evict_ciphertext_mapping(inode);
 	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
 	iput(ecryptfs_inode_to_lower(inode));

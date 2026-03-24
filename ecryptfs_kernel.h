@@ -256,6 +256,11 @@ struct ecryptfs_inode_info {
 	atomic_t lower_file_count;
 	struct file *lower_file;
 	struct ecryptfs_crypt_stat crypt_stat;
+	/* ACL: ciphertext cache (SRS §18.4.3) */
+	struct address_space	*ciphertext_mapping;	/* NULL until first cipher open */
+	struct mutex		 cipher_mapping_mutex;	/* protects lazy init race      */
+	/* ACL: cached ACL ID from xattr (SRS §5.2); 0 = not yet resolved */
+	u16			 cached_acl_id;
 };
 
 /* dentry private data. Each dentry must keep track of a lower
@@ -349,12 +354,16 @@ struct ecryptfs_mount_crypt_stat {
 struct ecryptfs_sb_info {
 	struct super_block *wsi_sb;
 	struct ecryptfs_mount_crypt_stat mount_crypt_stat;
+	/* ACL: per-mount rule table; NULL = no ACL configured (SRS §5.3) */
+	struct ecryptfs_acl_table	*acl_table;
 };
 
 /* file private data. */
 struct ecryptfs_file_info {
 	struct file *wfi_file;
 	struct ecryptfs_crypt_stat *crypt_stat;
+	/* ACL: per-fd data delivery mode decided at open() (SRS §3.3) */
+	u8		 content_mode;	/* enum ecryptfs_content_mode */
 };
 
 /* auth_tok <=> encrypted_session_key mappings */
@@ -703,5 +712,7 @@ int ecryptfs_derive_iv(char *iv, struct ecryptfs_crypt_stat *crypt_stat,
 		       loff_t offset);
 
 extern const struct xattr_handler *ecryptfs_xattr_handlers[];
+
+#include "acl.h"
 
 #endif /* #ifndef ECRYPTFS_KERNEL_H */

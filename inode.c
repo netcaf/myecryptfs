@@ -873,8 +873,23 @@ static int
 ecryptfs_permission(struct user_namespace *mnt_userns, struct inode *inode,
 		    int mask)
 {
-	return inode_permission(&init_user_ns,
-				ecryptfs_inode_to_lower(inode), mask);
+	struct ecryptfs_acl_decision decision;
+	int rc;
+
+	/* Stage 1: system (lower fs) permission check */
+	rc = inode_permission(&init_user_ns,
+			      ecryptfs_inode_to_lower(inode), mask);
+	if (rc)
+		return rc;
+
+	/* Stage 2: eCryptfs ACL allow/deny gate (SRS §11, step 9-11) */
+	rc = ecryptfs_acl_check(inode, mask, &decision);
+	if (rc)
+		return rc;
+	if (decision.content == ECRYPTFS_CONTENT_DENY)
+		return -EACCES;
+
+	return 0;
 }
 
 /**

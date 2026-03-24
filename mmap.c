@@ -272,6 +272,13 @@ static int ecryptfs_write_begin(struct file *file,
 	loff_t prev_page_end_size;
 	int rc = 0;
 
+	/*
+	 * Invalidate the corresponding cipher-cache page before dirtying
+	 * the plaintext side, so cipher-mode readers re-fetch fresh data.
+	 * No-op when ciphertext_mapping is NULL (SRS §18.5.1).
+	 */
+	ecryptfs_acl_invalidate_cipher_page(mapping->host, index);
+
 	page = grab_cache_page_write_begin(mapping, index, flags);
 	if (!page)
 		return -ENOMEM;
