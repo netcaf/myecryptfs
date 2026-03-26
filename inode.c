@@ -767,6 +767,11 @@ static int truncate_upper(struct dentry *dentry, struct iattr *ia,
 				    - (ia->ia_size & ~PAGE_MASK));
 
 		if (!(crypt_stat->flags & ECRYPTFS_ENCRYPTED)) {
+			/* Purge cipher cache first (SRS §18.6.3) */
+			if (ecryptfs_inode_to_private(inode)->ciphertext_mapping)
+				truncate_inode_pages(
+					ecryptfs_inode_to_private(inode)->ciphertext_mapping,
+					ia->ia_size);
 			truncate_setsize(inode, ia->ia_size);
 			lower_ia->ia_size = ia->ia_size;
 			lower_ia->ia_valid |= ATTR_SIZE;
@@ -790,6 +795,11 @@ static int truncate_upper(struct dentry *dentry, struct iattr *ia,
 				goto out;
 			}
 		}
+		/* Purge cipher cache first (SRS §18.6.3) */
+		if (ecryptfs_inode_to_private(inode)->ciphertext_mapping)
+			truncate_inode_pages(
+				ecryptfs_inode_to_private(inode)->ciphertext_mapping,
+				ia->ia_size);
 		truncate_setsize(inode, ia->ia_size);
 		rc = ecryptfs_write_inode_size_to_metadata(inode);
 		if (rc) {
@@ -887,6 +897,20 @@ ecryptfs_permission(struct user_namespace *mnt_userns, struct inode *inode,
 	if (rc)
 		return rc;
 	if (decision.content == ECRYPTFS_CONTENT_DENY)
+		return -EACCES;
+
+	/*
+	 * Enforce perm bits: ACL cannot grant more than it allows.
+	 * decision.perm is already intersected with system permission
+	 * inside acl_evaluate(), so we just verify all requested bits
+	 * are present.  MAY_NOT_BLOCK / MAY_OPEN / etc. are filtered
+	 * out — only check actual r/w/x bits.
+	 */
+	if ((mask & MAY_READ) && !(decision.perm & ECRYPTFS_ACL_PERM_R))
+		return -EACCES;
+	if ((mask & MAY_WRITE) && !(decision.perm & ECRYPTFS_ACL_PERM_W))
+		return -EACCES;
+	if ((mask & MAY_EXEC) && !(decision.perm & ECRYPTFS_ACL_PERM_X))
 		return -EACCES;
 
 	return 0;

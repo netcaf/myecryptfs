@@ -35,8 +35,26 @@ static ssize_t ecryptfs_read_update_atime(struct kiocb *iocb,
 	ssize_t rc;
 	struct path *path;
 	struct file *file = iocb->ki_filp;
+	struct ecryptfs_file_info *file_info = ecryptfs_file_to_private(file);
 
-	rc = generic_file_read_iter(iocb, to);
+	if (file_info->content_mode == ECRYPTFS_CONTENT_CIPHERTEXT) {
+		/*
+		 * Ciphertext mode: bypass the page cache and read raw
+		 * encrypted bytes directly from the lower file.
+		 * vfs_iter_read() is bounded by the lower file's actual
+		 * size (header + encrypted pages), not the plaintext
+		 * i_size stored on the upper inode. (SRS §18.4.1)
+		 */
+		struct file *lower_file = ecryptfs_file_to_lower(file);
+		loff_t pos = iocb->ki_pos;
+
+		rc = vfs_iter_read(lower_file, to, &pos, 0);
+		if (rc > 0)
+			iocb->ki_pos = pos;
+	} else {
+		rc = generic_file_read_iter(iocb, to);
+	}
+
 	if (rc >= 0) {
 		path = ecryptfs_dentry_to_lower_path(file->f_path.dentry);
 		touch_atime(path);
@@ -238,16 +256,23 @@ static int ecryptfs_open(struct inode *inode, struct file *file)
 
 	/*
 	 * ACL content-mode decision (SRS §11, §18.6.2).
-	 * ecryptfs_acl_check() is a no-op pass-through in Phase 1
-	 * (when no ACL table is configured), so existing behaviour is
-	 * fully preserved.
+	 * Pass the actual file access mode so acl_evaluate() computes
+	 * the correct perm intersection.  ecryptfs_acl_check() is a
+	 * no-op pass-through when no ACL table is configured, so
+	 * existing behaviour is fully preserved.
 	 */
 	{
 		struct ecryptfs_acl_decision decision;
 		struct ecryptfs_inode_info *inode_info =
 			ecryptfs_inode_to_private(inode);
+		int open_mask = 0;
 
-		rc = ecryptfs_acl_check(inode, MAY_READ, &decision);
+		if (file->f_mode & FMODE_READ)
+			open_mask |= MAY_READ;
+		if (file->f_mode & FMODE_WRITE)
+			open_mask |= MAY_WRITE;
+
+		rc = ecryptfs_acl_check(inode, open_mask, &decision);
 		if (rc)
 			goto out_put;
 

@@ -5,12 +5,18 @@
  *
  * Design reference: doc/acl_srs.md (v6.0)
  *
- * Phase 1 status:
- *   - All data structures and lifecycle functions are complete.
- *   - ecryptfs_acl_check() returns pass-through (allow-all / plaintext)
- *     when no ACL table is configured, preserving existing behaviour.
- *   - xattr read, inheritance traversal, and process matching are stubbed;
- *     they will be filled in during Phase 2 and Phase 5.
+ * Implemented:
+ *   - Data structures, lifecycle, hash table, debugfs management.
+ *   - xattr read (trusted.ecryptfs_acl_id), cached per-inode.
+ *   - Subject matching: UID, GID, process (INODE_AUTO via dev+ino).
+ *   - RCU walk safety (-ECHILD bail-out for MAY_NOT_BLOCK).
+ *   - Dual address_space cipher cache for ciphertext-mode fds.
+ *   - Pass-through when no ACL table is configured (allow-all/plaintext).
+ * Not yet implemented:
+ *   - Dynamic inheritance (upward walk to mount root, SRS §7).
+ *   - INODE_AUTO_RESOLVE stale-inode re-resolve (SRS §9).
+ *   - HASH / PATH_ONLY process matching modes.
+ *   - Persistence (SRS §12).
  */
 
 #include <linux/slab.h>
@@ -20,6 +26,7 @@
 #include <linux/uidgid.h>
 #include <linux/mm.h>
 #include <linux/dcache.h>
+#include <linux/namei.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <asm/byteorder.h>
@@ -115,42 +122,124 @@ void ecryptfs_acl_table_free(struct ecryptfs_acl_table *tbl)
 /* ================================================================== */
 
 /*
+ * acl_get_current_exe - obtain the exe file of the current task.
+ *
+ * get_task_exe_file() is not EXPORT_SYMBOL'd, so we open-code the
+ * same RCU-safe pattern used in kernel/fork.c.  Caller must fput()
+ * the returned file.
+ */
+static struct file *acl_get_current_exe(void)
+{
+	struct file *exe_file;
+	struct mm_struct *mm = current->mm;
+
+	if (!mm)
+		return NULL;
+
+	rcu_read_lock();
+	exe_file = rcu_dereference(mm->exe_file);
+	if (exe_file && !get_file_rcu(exe_file))
+		exe_file = NULL;
+	rcu_read_unlock();
+	return exe_file;
+}
+
+/*
  * subject_matches - test whether the current process satisfies a rule's
  * subject constraints.
  *
  * All specified fields are ANDed: a wildcard field (INVALID_UID,
  * INVALID_GID, proc_ino == 0) is always satisfied.
  *
- * Phase 1: process matching (INODE_AUTO / HASH / PATH_ONLY) is stubbed
- * to always return false when proc_ino != 0 so that only wildcard-process
- * rules can match.  Full implementation arrives in Phase 5.
+ * Returns: 1 = match, 0 = no match, -ECHILD = need blocking context.
  */
-static bool subject_matches(const struct ecryptfs_acl_rule *rule)
+static int subject_matches(const struct ecryptfs_acl_rule *rule, int mask,
+			   struct file **exe_filep)
 {
 	const struct cred *cred = current_cred();
 
 	/* UID check */
-	if (uid_valid(rule->uid) && !uid_eq(rule->uid, cred->uid))
-		return false;
+	if (uid_valid(rule->uid) && !uid_eq(rule->uid, cred->uid)) {
+		pr_debug("ecryptfs_acl: rule prio=%u uid=%u mismatch (caller uid=%u)\n",
+			 rule->priority,
+			 from_kuid(&init_user_ns, rule->uid),
+			 from_kuid(&init_user_ns, cred->uid));
+		return 0;
+	}
 
 	/* GID check */
-	if (gid_valid(rule->gid) && !gid_eq(rule->gid, cred->gid))
-		return false;
+	if (gid_valid(rule->gid) && !gid_eq(rule->gid, cred->gid)) {
+		pr_debug("ecryptfs_acl: rule prio=%u gid=%u mismatch (caller gid=%u)\n",
+			 rule->priority,
+			 from_kgid(&init_user_ns, rule->gid),
+			 from_kgid(&init_user_ns, cred->gid));
+		return 0;
+	}
 
-	/*
-	 * Process check — Phase 5 stub.
-	 * proc_ino == 0 is the wildcard; any non-zero value means "must
-	 * match a specific executable" which we cannot verify yet.
-	 */
-	if (rule->proc_ino != 0)
-		return false;
+	/* Process check — INODE_AUTO mode (SRS §9) */
+	if (rule->proc_ino != 0) {
+		struct inode *exe_inode;
+		bool match;
 
-	return true;
+		if (mask & MAY_NOT_BLOCK)
+			return -ECHILD;
+
+		/* Lazy acquisition — reused across rules in one evaluate */
+		if (!*exe_filep) {
+			*exe_filep = acl_get_current_exe();
+			if (!*exe_filep) {
+				pr_debug("ecryptfs_acl: rule prio=%u proc_ino=%lu no exe (kernel thread?)\n",
+					 rule->priority, rule->proc_ino);
+				return 0;  /* kernel thread / no exe */
+			}
+		}
+
+		exe_inode = file_inode(*exe_filep);
+		match = (exe_inode->i_ino == rule->proc_ino &&
+			 exe_inode->i_sb->s_dev == rule->proc_dev);
+		if (!match) {
+			pr_debug("ecryptfs_acl: rule prio=%u proc mismatch want=%u:%lu got=%u:%lu (%s)\n",
+				 rule->priority,
+				 MAJOR(rule->proc_dev), rule->proc_ino,
+				 MAJOR(exe_inode->i_sb->s_dev),
+				 exe_inode->i_ino,
+				 rule->proc_path ? rule->proc_path : "?");
+			return 0;
+		}
+	}
+
+	pr_debug("ecryptfs_acl: rule prio=%u MATCHED (uid=%s gid=%s proc=%s)\n",
+		 rule->priority,
+		 uid_valid(rule->uid) ? "set" : "*",
+		 gid_valid(rule->gid) ? "set" : "*",
+		 rule->proc_ino ? (rule->proc_path ? rule->proc_path : "ino") : "*");
+	return 1;
 }
 
 /* ================================================================== */
 /* Decision engine (SRS §6.2, §11)                                     */
 /* ================================================================== */
+
+/*
+ * may_to_acl_perm - translate VFS MAY_* bits to ECRYPTFS_ACL_PERM_* bits.
+ *
+ * The two bit-spaces use different orderings:
+ *   MAY_READ=0x04  vs  ECRYPTFS_ACL_PERM_R=0x01
+ *   MAY_WRITE=0x02 vs  ECRYPTFS_ACL_PERM_W=0x02
+ *   MAY_EXEC=0x01  vs  ECRYPTFS_ACL_PERM_X=0x04
+ */
+static u8 may_to_acl_perm(int mask)
+{
+	u8 perm = 0;
+
+	if (mask & MAY_READ)
+		perm |= ECRYPTFS_ACL_PERM_R;
+	if (mask & MAY_WRITE)
+		perm |= ECRYPTFS_ACL_PERM_W;
+	if (mask & MAY_EXEC)
+		perm |= ECRYPTFS_ACL_PERM_X;
+	return perm;
+}
 
 /* Default rule: deny everything (SRS §10) */
 static const struct ecryptfs_acl_decision acl_default_deny = {
@@ -167,34 +256,44 @@ static const struct ecryptfs_acl_decision acl_default_deny = {
  *
  * sys_mask is the VFS-layer MAY_READ | MAY_WRITE | MAY_EXEC bitmask;
  * the final permission is ACL_perm ∩ system_perm (SRS §2).
+ *
+ * Returns 0 on success, -ECHILD if process matching needs blocking context.
  */
-static void acl_evaluate(const struct ecryptfs_acl_entry *entry,
-			 int sys_mask, struct ecryptfs_acl_decision *out)
+static int acl_evaluate(const struct ecryptfs_acl_entry *entry,
+			int sys_mask, struct ecryptfs_acl_decision *out,
+			struct file **exe_filep)
 {
 	int i;
 
 	for (i = 0; i < entry->nrules; i++) {
 		const struct ecryptfs_acl_rule *rule = &entry->rules[i];
+		int rc;
 
-		if (!subject_matches(rule))
+		rc = subject_matches(rule, sys_mask, exe_filep);
+		if (rc < 0)
+			return rc;	/* -ECHILD */
+		if (rc == 0)
 			continue;
 
-		/* Intersect with VFS system permission */
-		out->perm    = rule->perm & (u8)sys_mask;
+		/* Intersect with VFS system permission (translate bit-spaces) */
+		out->perm    = rule->perm & may_to_acl_perm(sys_mask);
 		out->content = (enum ecryptfs_content_mode)rule->content;
 
 		/* ciphertext mode forces read-only at kernel level (SRS §2) */
 		if (out->content == ECRYPTFS_CONTENT_CIPHERTEXT)
 			out->perm &= ECRYPTFS_ACL_PERM_R;
 
-		return;	/* first-match wins */
+		return 0;	/* first-match wins */
 	}
 
+	pr_debug("ecryptfs_acl: acl_id=%u no rule matched → default deny\n",
+		 entry->acl_id);
 	*out = acl_default_deny;
+	return 0;
 }
 
 /* ================================================================== */
-/* xattr / inheritance (Phase 2 stubs)                                 */
+/* xattr read / inheritance                                            */
 /* ================================================================== */
 
 /*
@@ -258,13 +357,17 @@ int ecryptfs_acl_check(struct inode *inode, int mask,
 		ecryptfs_superblock_to_private(inode->i_sb);
 	struct ecryptfs_acl_table *tbl = sb_info->acl_table;
 	struct ecryptfs_acl_entry *entry;
+	struct file *exe_file = NULL;
 	u16 acl_id;
+	int rc = 0;
 
 	/*
-	 * Phase 1 pass-through: no ACL table configured on this mount.
+	 * Pass-through: no ACL table configured on this mount.
 	 * Preserve all existing eCryptfs behaviour unchanged.
 	 */
 	if (!tbl) {
+		pr_debug("ecryptfs_acl: ino=%lu no table → pass-through\n",
+			 inode->i_ino);
 		out->perm    = ECRYPTFS_ACL_PERM_ALL;
 		out->content = ECRYPTFS_CONTENT_PLAINTEXT;
 		return 0;
@@ -273,30 +376,54 @@ int ecryptfs_acl_check(struct inode *inode, int mask,
 	/* Step 1: resolve ACL ID for this inode (cached or from xattr) */
 	acl_id = inode_info->cached_acl_id;
 	if (acl_id == ECRYPTFS_ACL_ID_NONE) {
+		/* acl_read_id() sleeps — bail in RCU walk mode */
+		if (mask & MAY_NOT_BLOCK)
+			return -ECHILD;
 		acl_id = acl_read_id(inode);
 		/*
-		 * TODO Phase 2: if still NONE, walk up to mount root
+		 * TODO: if still NONE, walk up to mount root
 		 * for dynamic inheritance (SRS §7).
 		 */
 		inode_info->cached_acl_id = acl_id;
 	}
 
-	/* No ACL anywhere up the tree → default deny (SRS §10) */
+	/*
+	 * No ACL xattr on this inode (and no inheritance yet).
+	 * Pass through: allow-all / plaintext, so files without
+	 * explicit ACL tagging behave exactly like stock eCryptfs.
+	 * Deny-by-default only applies when an ACL ID IS set but
+	 * no matching rule is found (line 264/377 below).
+	 */
 	if (acl_id == ECRYPTFS_ACL_ID_NONE) {
-		*out = acl_default_deny;
+		pr_debug("ecryptfs_acl: ino=%lu no xattr → pass-through\n",
+			 inode->i_ino);
+		out->perm    = ECRYPTFS_ACL_PERM_ALL;
+		out->content = ECRYPTFS_CONTENT_PLAINTEXT;
 		return 0;
 	}
 
-	/* Step 2: look up rule list and evaluate */
+	/*
+	 * Step 2: look up rule list and evaluate.
+	 * exe_file is acquired lazily inside subject_matches() and
+	 * released here, AFTER dropping the spinlock.
+	 */
 	read_lock(&tbl->lock);
 	entry = acl_table_lookup(tbl, acl_id);
-	if (entry)
-		acl_evaluate(entry, mask, out);
-	else
+	if (entry) {
+		rc = acl_evaluate(entry, mask, out, &exe_file);
+	} else {
+		pr_debug("ecryptfs_acl: ino=%lu acl_id=%u not in table → deny\n",
+			 inode->i_ino, acl_id);
 		*out = acl_default_deny;	/* missing entry → deny */
+	}
 	read_unlock(&tbl->lock);
 
-	return 0;
+	pr_debug("ecryptfs_acl: ino=%lu acl_id=%u mask=0x%x → perm=0x%x content=%d rc=%d\n",
+		 inode->i_ino, acl_id, mask, out->perm, out->content, rc);
+
+	if (exe_file)
+		fput(exe_file);
+	return rc;
 }
 
 /* ================================================================== */
@@ -571,7 +698,7 @@ static int acl_cmd_add(struct ecryptfs_sb_info *sbi, char *args)
 	struct ecryptfs_acl_table *tbl = sbi->acl_table;
 	struct ecryptfs_acl_entry *entry, *new_entry;
 	struct ecryptfs_acl_rule rule;
-	char uid_str[16], gid_str[16], proc_str[16];
+	char uid_str[16], gid_str[16], proc_str[256];
 	char perm_str[8], content_str[16];
 	u16 acl_id;
 	u32 uid_val, gid_val;
@@ -580,7 +707,7 @@ static int acl_cmd_add(struct ecryptfs_sb_info *sbi, char *args)
 
 	memset(&rule, 0, sizeof(rule));
 
-	rc = sscanf(args, "%hu %u %15s %15s %15s %7s %15s",
+	rc = sscanf(args, "%hu %u %15s %15s %255s %7s %15s",
 		    &acl_id, &rule.priority,
 		    uid_str, gid_str, proc_str, perm_str, content_str);
 	if (rc != 7)
@@ -608,27 +735,47 @@ static int acl_cmd_add(struct ecryptfs_sb_info *sbi, char *args)
 	}
 
 	/* Process */
-	if (proc_str[0] != '*')
-		return -EINVAL;	/* Phase 5: full process matching */
-	rule.proc_ino = 0;
+	if (proc_str[0] == '*') {
+		rule.proc_ino = 0;	/* wildcard */
+	} else {
+		struct path exe_path;
+		struct inode *exe_inode;
+
+		rc = kern_path(proc_str, LOOKUP_FOLLOW, &exe_path);
+		if (rc)
+			return rc;
+		exe_inode = d_backing_inode(exe_path.dentry);
+		rule.proc_dev = exe_inode->i_sb->s_dev;
+		rule.proc_ino = exe_inode->i_ino;
+		rule.proc_path = kstrdup(proc_str, GFP_KERNEL);
+		path_put(&exe_path);
+		if (!rule.proc_path)
+			return -ENOMEM;
+	}
 	rule.proc_mode = ECRYPTFS_PROC_INODE_AUTO;
 
 	/* Permission */
 	rc = parse_perm(perm_str);
-	if (rc < 0)
-		return -EINVAL;
+	if (rc < 0) {
+		rc = -EINVAL;
+		goto out_free_path;
+	}
 	rule.perm = (u8)rc;
 
 	/* Content mode */
 	content_val = parse_content(content_str);
-	if (content_val < 0)
-		return -EINVAL;
+	if (content_val < 0) {
+		rc = -EINVAL;
+		goto out_free_path;
+	}
 	rule.content = (u8)content_val;
 
 	/* Pre-allocate outside the lock (struct is ~7 KB) */
 	new_entry = acl_entry_create(acl_id);
-	if (!new_entry)
-		return -ENOMEM;
+	if (!new_entry) {
+		rc = -ENOMEM;
+		goto out_free_path;
+	}
 
 	/* Insert into table */
 	write_lock(&tbl->lock);
@@ -644,9 +791,13 @@ static int acl_cmd_add(struct ecryptfs_sb_info *sbi, char *args)
 
 	kfree(new_entry);	/* free if unclaimed */
 
-	if (rc == 0)
+	if (rc == 0) {
 		acl_invalidate_all_caches(sbi->upper_sb);
+		return 0;
+	}
 
+out_free_path:
+	kfree(rule.proc_path);
 	return rc;
 }
 
@@ -750,7 +901,7 @@ static ssize_t acl_control_write(struct file *file, const char __user *ubuf,
 	char *buf, *cmd, *args;
 	int rc;
 
-	if (count > 256)
+	if (count > 512)
 		return -EINVAL;
 
 	buf = memdup_user_nul(ubuf, count);

@@ -172,7 +172,9 @@ void ecryptfs_acl_table_free(struct ecryptfs_acl_table *tbl);
  * @mask:  VFS-layer requested permission mask (MAY_READ | MAY_WRITE …)
  * @out:   filled with the final allowed perm and content mode
  *
- * Returns 0 on success; negative errno on internal error.
+ * Returns 0 on success; -ECHILD when called in RCU walk mode
+ * (MAY_NOT_BLOCK) and a sleeping operation is needed (VFS retries in
+ * blocking mode); other negative errno on internal error.
  * A DENY result is signalled via out->content == ECRYPTFS_CONTENT_DENY,
  * not via the return value.
  */
