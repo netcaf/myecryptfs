@@ -3,8 +3,8 @@
 # Automatically mounts /home/pi/data.enc to /home/pi/data.view with your passphrase
 
 # Configuration
-ENC_DIR="/home/pi/data.enc"
-DEC_DIR="/home/pi/data.view"
+ENC_DIR="/testbase/data.enc"
+DEC_DIR="/testbase/data.view"
 PASS="Bicdroid123"
 ECRYPTFS_MODULE="/home/pi/ecryptfs/ecryptfs.ko"
 
