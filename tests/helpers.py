@@ -91,3 +91,28 @@ def run(binary: str, path: str, uid: int = 0, gid: int = 0) -> subprocess.Comple
     result = subprocess.run([binary, path], capture_output=True, preexec_fn=_set_ids)
     _log.info(f"  result   : exit={result.returncode}")
     return result
+
+DD = "/bin/dd"
+
+def run_write(path: str, uid: int = 0, gid: int = 0) -> subprocess.CompletedProcess:
+    """
+    Try to open path for writing as the given uid/gid.
+    Uses dd to open the file O_WRONLY without changing its content
+    (count=0 writes zero bytes).  The kernel sees dd as the exe.
+    """
+    user = _USER_NAMES.get(uid, f"uid={uid}")
+    _log.info(
+        f"  command  : {user} (uid={uid} gid={gid})"
+        f"  runs dd (write) → {os.path.basename(path)}"
+    )
+
+    def _set_ids():
+        os.setgid(gid)
+        os.setuid(uid)
+
+    result = subprocess.run(
+        [DD, f"of={path}", "if=/dev/null", "bs=1", "count=0"],
+        capture_output=True, preexec_fn=_set_ids
+    )
+    _log.info(f"  result   : exit={result.returncode}")
+    return result
