@@ -12,8 +12,8 @@
  *   - RCU walk safety (-ECHILD bail-out for MAY_NOT_BLOCK).
  *   - Dual address_space cipher cache for ciphertext-mode fds.
  *   - Pass-through when no ACL table is configured (allow-all/plaintext).
+ *   - Dynamic inheritance: upward dentry walk to mount root (SRS §7).
  * Not yet implemented:
- *   - Dynamic inheritance (upward walk to mount root, SRS §7).
  *   - INODE_AUTO_RESOLVE stale-inode re-resolve (SRS §9).
  *   - HASH / PATH_ONLY process matching modes.
  *   - Persistence (SRS §12).
@@ -261,7 +261,7 @@ static const struct ecryptfs_acl_decision acl_default_deny = {
  */
 static int acl_evaluate(const struct ecryptfs_acl_entry *entry,
 			int sys_mask, struct ecryptfs_acl_decision *out,
-			struct file **exe_filep)
+			struct file **exe_filep, bool is_dir)
 {
 	int i;
 
@@ -279,8 +279,12 @@ static int acl_evaluate(const struct ecryptfs_acl_entry *entry,
 		out->perm    = rule->perm & may_to_acl_perm(sys_mask);
 		out->content = (enum ecryptfs_content_mode)rule->content;
 
-		/* ciphertext mode forces read-only at kernel level (SRS §2) */
-		if (out->content == ECRYPTFS_CONTENT_CIPHERTEXT)
+		/*
+		 * Ciphertext mode forces read-only for regular files (SRS §2).
+		 * Do NOT strip exec for directories — they need MAY_EXEC for
+		 * path traversal and do not serve file content themselves.
+		 */
+		if (!is_dir && out->content == ECRYPTFS_CONTENT_CIPHERTEXT)
 			out->perm &= ECRYPTFS_ACL_PERM_R;
 
 		return 0;	/* first-match wins */
@@ -328,6 +332,84 @@ static u16 acl_read_id(struct inode *inode)
 		return ECRYPTFS_ACL_ID_NONE;
 
 	return be16_to_cpu(val);
+}
+
+/*
+ * acl_read_id_dentry - read ACL ID xattr directly from an upper dentry.
+ *
+ * Like acl_read_id() but takes a dentry directly — avoids d_find_any_alias()
+ * overhead during the ancestor walk in acl_inherit_id().
+ * Caller must hold a reference on @upper_dentry.
+ */
+static u16 acl_read_id_dentry(struct dentry *upper_dentry)
+{
+	struct dentry *lower_dentry;
+	struct inode *lower_inode;
+	__be16 val;
+	ssize_t rc;
+
+	if (!upper_dentry->d_fsdata)
+		return ECRYPTFS_ACL_ID_NONE;
+
+	lower_dentry = ecryptfs_dentry_to_lower(upper_dentry);
+	lower_inode  = d_inode(lower_dentry);
+	if (!lower_inode)
+		return ECRYPTFS_ACL_ID_NONE;
+
+	rc = ecryptfs_getxattr_lower(lower_dentry, lower_inode,
+				     ECRYPTFS_ACL_XATTR_NAME, &val, 2);
+	if (rc != 2)
+		return ECRYPTFS_ACL_ID_NONE;
+
+	return be16_to_cpu(val);
+}
+
+/*
+ * acl_inherit_id - walk up the dentry tree looking for an ancestor ACL ID.
+ *
+ * Called only when the inode itself has no ACL xattr (SRS §7).
+ * Traverses parent dentries from the inode's immediate parent up to (and
+ * including) the eCryptfs mount root.  Returns the first ACL ID found, or
+ * ECRYPTFS_ACL_ID_NONE if no ancestor carries one.
+ *
+ * The walk is capped at ECRYPTFS_ACL_INHERIT_MAX_DEPTH levels to guard
+ * against pathologically deep trees or an infinite loop bug.
+ */
+#define ECRYPTFS_ACL_INHERIT_MAX_DEPTH 32
+
+static u16 acl_inherit_id(struct inode *inode)
+{
+	struct dentry *root   = inode->i_sb->s_root;
+	struct dentry *upper_dentry;
+	struct dentry *cur;
+	struct dentry *parent;
+	u16 acl_id = ECRYPTFS_ACL_ID_NONE;
+	int depth   = 0;
+
+	upper_dentry = d_find_any_alias(inode);
+	if (!upper_dentry)
+		return ECRYPTFS_ACL_ID_NONE;
+
+	/* Start from the immediate parent of this inode. */
+	cur = dget_parent(upper_dentry);
+	dput(upper_dentry);
+
+	while (depth++ < ECRYPTFS_ACL_INHERIT_MAX_DEPTH) {
+		acl_id = acl_read_id_dentry(cur);
+		if (acl_id != ECRYPTFS_ACL_ID_NONE)
+			break;
+
+		/* Stop after checking the mount root itself. */
+		if (cur == root)
+			break;
+
+		parent = dget_parent(cur);
+		dput(cur);
+		cur = parent;
+	}
+
+	dput(cur);
+	return acl_id;
 }
 
 /* ================================================================== */
@@ -380,19 +462,18 @@ int ecryptfs_acl_check(struct inode *inode, int mask,
 		if (mask & MAY_NOT_BLOCK)
 			return -ECHILD;
 		acl_id = acl_read_id(inode);
-		/*
-		 * TODO: if still NONE, walk up to mount root
-		 * for dynamic inheritance (SRS §7).
-		 */
+		/* SRS §7: if no xattr on this inode, inherit from ancestor. */
+		if (acl_id == ECRYPTFS_ACL_ID_NONE)
+			acl_id = acl_inherit_id(inode);
 		inode_info->cached_acl_id = acl_id;
 	}
 
 	/*
-	 * No ACL xattr on this inode (and no inheritance yet).
-	 * Pass through: allow-all / plaintext, so files without
-	 * explicit ACL tagging behave exactly like stock eCryptfs.
+	 * No ACL xattr on this inode and no inherited ACL from any ancestor.
+	 * Pass through: allow-all / plaintext, so files without any
+	 * ACL tagging behave exactly like stock eCryptfs.
 	 * Deny-by-default only applies when an ACL ID IS set but
-	 * no matching rule is found (line 264/377 below).
+	 * no matching rule is found.
 	 */
 	if (acl_id == ECRYPTFS_ACL_ID_NONE) {
 		pr_debug("ecryptfs_acl: ino=%lu no xattr → pass-through\n",
@@ -410,7 +491,8 @@ int ecryptfs_acl_check(struct inode *inode, int mask,
 	read_lock(&tbl->lock);
 	entry = acl_table_lookup(tbl, acl_id);
 	if (entry) {
-		rc = acl_evaluate(entry, mask, out, &exe_file);
+		rc = acl_evaluate(entry, mask, out, &exe_file,
+				  S_ISDIR(inode->i_mode));
 	} else {
 		pr_debug("ecryptfs_acl: ino=%lu acl_id=%u not in table → deny\n",
 			 inode->i_ino, acl_id);

@@ -303,13 +303,14 @@ acl_table (per mount)
 
 ## What Was Built
 
-Three implementation phases, all complete:
+Four implementation phases, all complete:
 
 | Phase | Deliverable | Key Files |
 |---|---|---|
 | **1** | Data structures, xattr read, hash table, module init | `acl.h`, `acl.c`, `ecryptfs_kernel.h` |
 | **2** | Debugfs management interface (`add`/`clear`/`list`), xattr wiring | `acl.c`, `inode.c` |
 | **3** | Process matching (dev+ino), ciphertext read path, permission enforcement | `file.c`, `inode.c`, `acl.c` |
+| **4** | Directory inheritance — upward dentry walk to mount root (SRS §7) | `acl.c` |
 
 <br>
 
@@ -329,6 +330,8 @@ Three implementation phases, all complete:
 | Inode resolved at **rule-insertion time** via `kern_path()` | Avoids path lookup on every file access (hot path) |
 | Default when acl_id set but **no rule matches** → DENY | Fail-closed: explicit rules required, no accidental allow |
 | Default when **no xattr** → pass-through | Backward compatible with existing unprotected files |
+| Inheritance walk capped at **32 levels** | Guards against cycles or pathologically deep trees |
+| Ciphertext perm-stripping **skipped for directories** | Directories need `MAY_EXEC` for traversal; they serve no file data |
 
 ---
 
@@ -348,10 +351,45 @@ echo "clear 1" | sudo tee /sys/kernel/debug/ecryptfs_acl/0/control
 sudo cat /sys/kernel/debug/ecryptfs_acl/0/rules
 ```
 
-**Tag a file:**
+**Tag a file** or **a directory** (all files inside inherit the rules):
 ```bash
+# Tag a single file
 setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/secret.txt
+
+# Tag a directory — every file/subdir inside inherits ACL ID 1
+setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/private/
 ```
+
+---
+
+## Directory Inheritance (SRS §7)
+
+A file with **no xattr of its own** inherits the ACL from the nearest tagged ancestor.
+
+```
+/data.enc/
+  private/          ← trusted.ecryptfs_acl_id = 0x0001
+    report.pdf      ← no xattr  →  inherits ACL 1
+    sub/            ← no xattr
+      notes.txt     ← no xattr  →  inherits ACL 1  (grandparent walk)
+```
+
+**Walk algorithm** — resolved lazily on first access:
+
+```
+file inode  →  read own xattr  →  NONE?
+                │
+                ▼
+          dget_parent(dentry)
+                │
+         check parent xattr  →  found? → use it
+                │ (NONE)
+         dget_parent again  → … up to mount root
+                │ (still NONE)
+         pass-through (allow-all)
+```
+
+> Capped at 32 ancestor levels. Cached per-inode after first resolve.
 
 ---
 <!-- _class: divider -->
@@ -395,7 +433,8 @@ No wrapper process in between.
 | `test_gid.py` | GID matching: match→plain, match→cipher, mismatch→deny | 3 |
 | `test_combined.py` | AND logic: all match, uid fail, exe fail | 4 |
 | `test_priority.py` | Priority ordering: cipher wins, plaintext wins | 2 |
-| **Total** | | **21 tests** |
+| `test_inheritance.py` | Directory inheritance: child plain/cipher/deny, nested plain/deny | 5 |
+| **Total** | | **26 tests** |
 
 <br>
 
@@ -405,7 +444,7 @@ Test users: `root` (uid=0), `pi` (uid=1000), `inspector` (uid=1001)
 
 ## Test Results
 
-All 21 tests pass. Live log output shows exactly what is being tested:
+All 26 tests pass. Live log output shows exactly what is being tested:
 
 ```
 tests/test_uid.py::test_matching_uid_plaintext
@@ -415,11 +454,11 @@ tests/test_uid.py::test_matching_uid_plaintext
   result   : exit=0
 PASSED
 
-tests/test_uid.py::test_wrong_uid_denied
-  scenario : rule uid=1001 | run as pi (uid=1000) → uid mismatch → expect EACCES
-  rule     : acl_id=2 prio=100  uid=1001 gid=*  exe=head  → plaintext
-  command  : pi (uid=1000 gid=1000)  runs head
-  result   : exit=1
+tests/test_inheritance.py::test_nested_inherits_plaintext
+  scenario : file two levels below tagged dir → plaintext via grandparent inheritance
+  rule     : acl_id=6 prio=100  uid=* gid=*  exe=head  → plaintext
+  command  : root (uid=0 gid=0)  runs head
+  result   : exit=0
 PASSED
 ```
 
@@ -447,7 +486,8 @@ PASSED
 - Three-point kernel enforcement
 - Dual address_space (plaintext / ciphertext cache isolation)
 - ciphertext read path (`vfs_iter_read`)
-- 21 automated tests — all passing
+- **Directory inheritance** — upward dentry walk to mount root
+- 26 automated tests — all passing
 
 </div>
 
@@ -457,8 +497,6 @@ PASSED
 
 - **Persistence** (§12)
   Rules lost on `rmmod` — need load/save to disk
-- **Directory inheritance** (§7)
-  Upward traversal to mount root
 - **HASH matching mode** (§9)
   SHA-256 of executable binary
 - **Stale inode re-resolve** (§9)
@@ -481,12 +519,12 @@ PASSED
 | **Enforcement** | Three kernel hook points — permission, open, read |
 | **Access model** | Subject (uid+gid+exe) × Permission × Content mode |
 | **Content control** | Same inode → different data per process (dual address_space) |
-| **Validated** | 21 automated tests covering all subject dimensions and outcomes |
-| **Codebase** | ~1500 lines added across 6 kernel source files |
+| **Validated** | 26 automated tests covering all subject dimensions, outcomes, and inheritance |
+| **Codebase** | ~1600 lines added across 6 kernel source files |
 
 <br>
 
-> The core enforcement mechanism is complete and verified. Remaining items (persistence, inheritance) are additive — the foundation is solid.
+> The core enforcement mechanism is complete and verified. Remaining items (persistence, HASH matching) are additive — the foundation is solid.
 
 ---
 <!-- _class: lead -->

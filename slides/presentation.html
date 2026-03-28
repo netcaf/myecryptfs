@@ -264,7 +264,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h1 id="01">01</h1>
 <h1 id="background--objective">Background &amp; Objective</h1>
 </section>
@@ -390,7 +390,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="what-is-ecryptfs">What is eCryptfs?</h2>
 <p>eCryptfs is a <strong>stacked cryptographic filesystem</strong> built into the Linux kernel.</p>
 <ul>
@@ -532,7 +532,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="the-problem">The Problem</h2>
 <p>eCryptfs has <strong>no fine-grained access control</strong> beyond standard POSIX permissions.</p>
 <br />
@@ -690,7 +690,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="project-objective">Project Objective</h2>
 <p>Design and implement an <strong>internal ACL system</strong> for a custom eCryptfs module that:</p>
 <br />
@@ -831,7 +831,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h1 id="02">02</h1>
 <h1 id="design">Design</h1>
 <footer>eCryptfs Custom ACL — Background</footer>
@@ -958,7 +958,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="access-decision-model">Access Decision Model</h2>
 <p>Every access decision has <strong>three dimensions</strong>:</p>
 <br />
@@ -1099,7 +1099,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="rule-matching-logic">Rule Matching Logic</h2>
 <div class="columns">
 <div>
@@ -1271,7 +1271,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="three-point-enforcement-architecture">Three-Point Enforcement Architecture</h2>
 <pre is="marp-pre" data-auto-scaling="downscale-only"><code>Process opens file
         │
@@ -1417,7 +1417,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="dual-address-space-design">Dual Address Space Design</h2>
 <p>The same inode must serve <strong>different data</strong> to different processes simultaneously.</p>
 <br />
@@ -1560,7 +1560,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="storage-model">Storage Model</h2>
 <p><strong>File side — xattr on lower inode:</strong></p>
 <pre is="marp-pre" data-auto-scaling="downscale-only"><code class="language-bash">trusted.ecryptfs_acl_id = 0x0001   <span class="hljs-comment"># big-endian uint16, 2 bytes</span>
@@ -1700,7 +1700,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h1 id="03">03</h1>
 <h1 id="implementation">Implementation</h1>
 <footer>eCryptfs Custom ACL — Design</footer>
@@ -1827,9 +1827,9 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="what-was-built">What Was Built</h2>
-<p>Three implementation phases, all complete:</p>
+<p>Four implementation phases, all complete:</p>
 <table>
 <thead>
 <tr>
@@ -1853,6 +1853,11 @@ section.divider h1 {
 <td><strong>3</strong></td>
 <td>Process matching (dev+ino), ciphertext read path, permission enforcement</td>
 <td><code>file.c</code>, <code>inode.c</code>, <code>acl.c</code></td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>Directory inheritance — upward dentry walk to mount root (SRS §7)</td>
+<td><code>acl.c</code></td>
 </tr>
 </tbody>
 </table>
@@ -1983,7 +1988,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="key-implementation-decisions">Key Implementation Decisions</h2>
 <br />
 <table>
@@ -2013,6 +2018,14 @@ section.divider h1 {
 <tr>
 <td>Default when <strong>no xattr</strong> → pass-through</td>
 <td>Backward compatible with existing unprotected files</td>
+</tr>
+<tr>
+<td>Inheritance walk capped at <strong>32 levels</strong></td>
+<td>Guards against cycles or pathologically deep trees</td>
+</tr>
+<tr>
+<td>Ciphertext perm-stripping <strong>skipped for directories</strong></td>
+<td>Directories need <code>MAY_EXEC</code> for traversal; they serve no file data</td>
 </tr>
 </tbody>
 </table>
@@ -2140,7 +2153,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="rule-management--debugfs-interface">Rule Management — Debugfs Interface</h2>
 <p>Rules are managed by writing commands to a debugfs control file:</p>
 <pre is="marp-pre" data-auto-scaling="downscale-only"><code class="language-bash"><span class="hljs-comment"># Add a rule</span>
@@ -2153,12 +2166,16 @@ section.divider h1 {
 <span class="hljs-comment"># View all rules</span>
 <span class="hljs-built_in">sudo</span> <span class="hljs-built_in">cat</span> /sys/kernel/debug/ecryptfs_acl/0/rules
 </code></pre>
-<p><strong>Tag a file:</strong></p>
-<pre is="marp-pre" data-auto-scaling="downscale-only"><code class="language-bash">setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/secret.txt
+<p><strong>Tag a file</strong> or <strong>a directory</strong> (all files inside inherit the rules):</p>
+<pre is="marp-pre" data-auto-scaling="downscale-only"><code class="language-bash"><span class="hljs-comment"># Tag a single file</span>
+setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/secret.txt
+
+<span class="hljs-comment"># Tag a directory — every file/subdir inside inherits ACL ID 1</span>
+setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/private/
 </code></pre>
 <footer>eCryptfs Custom ACL — Implementation</footer>
 </section>
-</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="16" data-class="divider" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Implementation" data-theme="gaia" data-style="section {
+</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="16" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Implementation" data-theme="gaia" data-style="section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
   font-size: 1.1rem;
 }
@@ -2219,7 +2236,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-" lang="en-US" class="divider" data-marpit-pagination="16" style="--class:divider;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Implementation;--theme:gaia;--style:section {
+" lang="en-US" class="lead" data-marpit-pagination="16" style="--class:lead;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Implementation;--theme:gaia;--style:section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
   font-size: 1.1rem;
 }
@@ -2280,150 +2297,158 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
+<h2 id="directory-inheritance-srs-%C2%A77">Directory Inheritance (SRS §7)</h2>
+<p>A file with <strong>no xattr of its own</strong> inherits the ACL from the nearest tagged ancestor.</p>
+<pre is="marp-pre" data-auto-scaling="downscale-only"><code>/data.enc/
+  private/          ← trusted.ecryptfs_acl_id = 0x0001
+    report.pdf      ← no xattr  →  inherits ACL 1
+    sub/            ← no xattr
+      notes.txt     ← no xattr  →  inherits ACL 1  (grandparent walk)
+</code></pre>
+<p><strong>Walk algorithm</strong> — resolved lazily on first access:</p>
+<pre is="marp-pre" data-auto-scaling="downscale-only"><code>file inode  →  read own xattr  →  NONE?
+                │
+                ▼
+          dget_parent(dentry)
+                │
+         check parent xattr  →  found? → use it
+                │ (NONE)
+         dget_parent again  → … up to mount root
+                │ (still NONE)
+         pass-through (allow-all)
+</code></pre>
+<blockquote>
+<p>Capped at 32 ancestor levels. Cached per-inode after first resolve.</p>
+</blockquote>
+<footer>eCryptfs Custom ACL — Implementation</footer>
+</section>
+</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="17" data-class="divider" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Implementation" data-theme="gaia" data-style="section {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1.1rem;
+}
+section.lead h1 {
+  font-size: 2.2rem;
+  color: #00d4ff;
+}
+section.lead h3 {
+  color: #a0c4ff;
+  font-weight: 300;
+}
+h2 {
+  color: #00d4ff;
+  border-bottom: 2px solid #00d4ff33;
+  padding-bottom: 0.2em;
+}
+table {
+  font-size: 0.85rem;
+  width: 100%;
+}
+th {
+  background: #00d4ff22;
+  color: #00d4ff;
+}
+code {
+  background: #ffffff15;
+  color: #ffd166;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: #a8ff78;
+  font-size: 0.8rem;
+}
+pre {
+  background: #0d0d1a;
+  border-left: 4px solid #00d4ff;
+  padding: 1em;
+}
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+footer {
+  color: #555577;
+  font-size: 0.7rem;
+}
+section.divider {
+  background: #0d0d1a;
+  justify-content: center;
+  align-items: center;
+}
+section.divider h1 {
+  color: #00d4ff;
+  font-size: 2.5rem;
+  border-left: 6px solid #00d4ff;
+  padding-left: 0.5em;
+}
+" lang="en-US" class="divider" data-marpit-pagination="17" style="--class:divider;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Implementation;--theme:gaia;--style:section {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1.1rem;
+}
+section.lead h1 {
+  font-size: 2.2rem;
+  color: #00d4ff;
+}
+section.lead h3 {
+  color: #a0c4ff;
+  font-weight: 300;
+}
+h2 {
+  color: #00d4ff;
+  border-bottom: 2px solid #00d4ff33;
+  padding-bottom: 0.2em;
+}
+table {
+  font-size: 0.85rem;
+  width: 100%;
+}
+th {
+  background: #00d4ff22;
+  color: #00d4ff;
+}
+code {
+  background: #ffffff15;
+  color: #ffd166;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: #a8ff78;
+  font-size: 0.8rem;
+}
+pre {
+  background: #0d0d1a;
+  border-left: 4px solid #00d4ff;
+  padding: 1em;
+}
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+footer {
+  color: #555577;
+  font-size: 0.7rem;
+}
+section.divider {
+  background: #0d0d1a;
+  justify-content: center;
+  align-items: center;
+}
+section.divider h1 {
+  color: #00d4ff;
+  font-size: 2.5rem;
+  border-left: 6px solid #00d4ff;
+  padding-left: 0.5em;
+}
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h1 id="04">04</h1>
 <h1 id="testing">Testing</h1>
 <footer>eCryptfs Custom ACL — Implementation</footer>
-</section>
-</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="17" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Testing" data-theme="gaia" data-style="section {
-  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
-  font-size: 1.1rem;
-}
-section.lead h1 {
-  font-size: 2.2rem;
-  color: #00d4ff;
-}
-section.lead h3 {
-  color: #a0c4ff;
-  font-weight: 300;
-}
-h2 {
-  color: #00d4ff;
-  border-bottom: 2px solid #00d4ff33;
-  padding-bottom: 0.2em;
-}
-table {
-  font-size: 0.85rem;
-  width: 100%;
-}
-th {
-  background: #00d4ff22;
-  color: #00d4ff;
-}
-code {
-  background: #ffffff15;
-  color: #ffd166;
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-}
-pre code {
-  background: transparent;
-  color: #a8ff78;
-  font-size: 0.8rem;
-}
-pre {
-  background: #0d0d1a;
-  border-left: 4px solid #00d4ff;
-  padding: 1em;
-}
-.columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5em;
-}
-footer {
-  color: #555577;
-  font-size: 0.7rem;
-}
-section.divider {
-  background: #0d0d1a;
-  justify-content: center;
-  align-items: center;
-}
-section.divider h1 {
-  color: #00d4ff;
-  font-size: 2.5rem;
-  border-left: 6px solid #00d4ff;
-  padding-left: 0.5em;
-}
-" lang="en-US" class="lead" data-marpit-pagination="17" style="--class:lead;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Testing;--theme:gaia;--style:section {
-  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
-  font-size: 1.1rem;
-}
-section.lead h1 {
-  font-size: 2.2rem;
-  color: #00d4ff;
-}
-section.lead h3 {
-  color: #a0c4ff;
-  font-weight: 300;
-}
-h2 {
-  color: #00d4ff;
-  border-bottom: 2px solid #00d4ff33;
-  padding-bottom: 0.2em;
-}
-table {
-  font-size: 0.85rem;
-  width: 100%;
-}
-th {
-  background: #00d4ff22;
-  color: #00d4ff;
-}
-code {
-  background: #ffffff15;
-  color: #ffd166;
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-}
-pre code {
-  background: transparent;
-  color: #a8ff78;
-  font-size: 0.8rem;
-}
-pre {
-  background: #0d0d1a;
-  border-left: 4px solid #00d4ff;
-  padding: 1em;
-}
-.columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5em;
-}
-footer {
-  color: #555577;
-  font-size: 0.7rem;
-}
-section.divider {
-  background: #0d0d1a;
-  justify-content: center;
-  align-items: center;
-}
-section.divider h1 {
-  color: #00d4ff;
-  font-size: 2.5rem;
-  border-left: 6px solid #00d4ff;
-  padding-left: 0.5em;
-}
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
-<h2 id="test-strategy">Test Strategy</h2>
-<p><strong>Language:</strong> Python + pytest<br />
-<strong>Approach:</strong> Black-box behavioral tests — run real binaries against real mounted files</p>
-<br />
-<p>Key enabler — user identity switching without <code>sudo</code>:</p>
-<pre is="marp-pre" data-auto-scaling="downscale-only"><code class="language-python"><span class="hljs-keyword">def</span> <span class="hljs-title function_">run</span>(<span class="hljs-params">binary, path, uid=<span class="hljs-number">0</span>, gid=<span class="hljs-number">0</span></span>):
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">_set_ids</span>():
-        os.setgid(gid)   <span class="hljs-comment"># must be before setuid</span>
-        os.setuid(uid)
-    <span class="hljs-keyword">return</span> subprocess.run([binary, path],
-                          capture_output=<span class="hljs-literal">True</span>,
-                          preexec_fn=_set_ids)
-</code></pre>
-<p><code>fork + setuid + exec</code> — the kernel sees the <strong>correct uid and exe path</strong>.<br />
-No wrapper process in between.</p>
-<footer>eCryptfs Custom ACL — Testing</footer>
 </section>
 </foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="18" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Testing" data-theme="gaia" data-style="section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
@@ -2547,56 +2572,22 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
-<h2 id="test-coverage">Test Coverage</h2>
-<table>
-<thead>
-<tr>
-<th>File</th>
-<th>Scenario</th>
-<th>Tests</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>test_rules.py</code></td>
-<td>Debugfs: add / clear / list / invalid cmd</td>
-<td>4</td>
-</tr>
-<tr>
-<td><code>test_basic.py</code></td>
-<td>Exe-only rules: passthrough / plaintext / ciphertext / deny</td>
-<td>4</td>
-</tr>
-<tr>
-<td><code>test_uid.py</code></td>
-<td>UID matching: match→plain, match→cipher, mismatch→deny, wildcard</td>
-<td>4</td>
-</tr>
-<tr>
-<td><code>test_gid.py</code></td>
-<td>GID matching: match→plain, match→cipher, mismatch→deny</td>
-<td>3</td>
-</tr>
-<tr>
-<td><code>test_combined.py</code></td>
-<td>AND logic: all match, uid fail, exe fail</td>
-<td>4</td>
-</tr>
-<tr>
-<td><code>test_priority.py</code></td>
-<td>Priority ordering: cipher wins, plaintext wins</td>
-<td>2</td>
-</tr>
-<tr>
-<td><strong>Total</strong></td>
-<td></td>
-<td><strong>21 tests</strong></td>
-</tr>
-</tbody>
-</table>
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
+<h2 id="test-strategy">Test Strategy</h2>
+<p><strong>Language:</strong> Python + pytest<br />
+<strong>Approach:</strong> Black-box behavioral tests — run real binaries against real mounted files</p>
 <br />
-<p>Test users: <code>root</code> (uid=0), <code>pi</code> (uid=1000), <code>inspector</code> (uid=1001)</p>
+<p>Key enabler — user identity switching without <code>sudo</code>:</p>
+<pre is="marp-pre" data-auto-scaling="downscale-only"><code class="language-python"><span class="hljs-keyword">def</span> <span class="hljs-title function_">run</span>(<span class="hljs-params">binary, path, uid=<span class="hljs-number">0</span>, gid=<span class="hljs-number">0</span></span>):
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">_set_ids</span>():
+        os.setgid(gid)   <span class="hljs-comment"># must be before setuid</span>
+        os.setuid(uid)
+    <span class="hljs-keyword">return</span> subprocess.run([binary, path],
+                          capture_output=<span class="hljs-literal">True</span>,
+                          preexec_fn=_set_ids)
+</code></pre>
+<p><code>fork + setuid + exec</code> — the kernel sees the <strong>correct uid and exe path</strong>.<br />
+No wrapper process in between.</p>
 <footer>eCryptfs Custom ACL — Testing</footer>
 </section>
 </foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="19" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Testing" data-theme="gaia" data-style="section {
@@ -2721,9 +2712,188 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
+<h2 id="test-coverage">Test Coverage</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Scenario</th>
+<th>Tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_rules.py</code></td>
+<td>Debugfs: add / clear / list / invalid cmd</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>test_basic.py</code></td>
+<td>Exe-only rules: passthrough / plaintext / ciphertext / deny</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>test_uid.py</code></td>
+<td>UID matching: match→plain, match→cipher, mismatch→deny, wildcard</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>test_gid.py</code></td>
+<td>GID matching: match→plain, match→cipher, mismatch→deny</td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>test_combined.py</code></td>
+<td>AND logic: all match, uid fail, exe fail</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>test_priority.py</code></td>
+<td>Priority ordering: cipher wins, plaintext wins</td>
+<td>2</td>
+</tr>
+<tr>
+<td><code>test_inheritance.py</code></td>
+<td>Directory inheritance: child plain/cipher/deny, nested plain/deny</td>
+<td>5</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td></td>
+<td><strong>26 tests</strong></td>
+</tr>
+</tbody>
+</table>
+<br />
+<p>Test users: <code>root</code> (uid=0), <code>pi</code> (uid=1000), <code>inspector</code> (uid=1001)</p>
+<footer>eCryptfs Custom ACL — Testing</footer>
+</section>
+</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="20" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Testing" data-theme="gaia" data-style="section {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1.1rem;
+}
+section.lead h1 {
+  font-size: 2.2rem;
+  color: #00d4ff;
+}
+section.lead h3 {
+  color: #a0c4ff;
+  font-weight: 300;
+}
+h2 {
+  color: #00d4ff;
+  border-bottom: 2px solid #00d4ff33;
+  padding-bottom: 0.2em;
+}
+table {
+  font-size: 0.85rem;
+  width: 100%;
+}
+th {
+  background: #00d4ff22;
+  color: #00d4ff;
+}
+code {
+  background: #ffffff15;
+  color: #ffd166;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: #a8ff78;
+  font-size: 0.8rem;
+}
+pre {
+  background: #0d0d1a;
+  border-left: 4px solid #00d4ff;
+  padding: 1em;
+}
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+footer {
+  color: #555577;
+  font-size: 0.7rem;
+}
+section.divider {
+  background: #0d0d1a;
+  justify-content: center;
+  align-items: center;
+}
+section.divider h1 {
+  color: #00d4ff;
+  font-size: 2.5rem;
+  border-left: 6px solid #00d4ff;
+  padding-left: 0.5em;
+}
+" lang="en-US" class="lead" data-marpit-pagination="20" style="--class:lead;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Testing;--theme:gaia;--style:section {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1.1rem;
+}
+section.lead h1 {
+  font-size: 2.2rem;
+  color: #00d4ff;
+}
+section.lead h3 {
+  color: #a0c4ff;
+  font-weight: 300;
+}
+h2 {
+  color: #00d4ff;
+  border-bottom: 2px solid #00d4ff33;
+  padding-bottom: 0.2em;
+}
+table {
+  font-size: 0.85rem;
+  width: 100%;
+}
+th {
+  background: #00d4ff22;
+  color: #00d4ff;
+}
+code {
+  background: #ffffff15;
+  color: #ffd166;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: #a8ff78;
+  font-size: 0.8rem;
+}
+pre {
+  background: #0d0d1a;
+  border-left: 4px solid #00d4ff;
+  padding: 1em;
+}
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+footer {
+  color: #555577;
+  font-size: 0.7rem;
+}
+section.divider {
+  background: #0d0d1a;
+  justify-content: center;
+  align-items: center;
+}
+section.divider h1 {
+  color: #00d4ff;
+  font-size: 2.5rem;
+  border-left: 6px solid #00d4ff;
+  padding-left: 0.5em;
+}
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="test-results">Test Results</h2>
-<p>All 21 tests pass. Live log output shows exactly what is being tested:</p>
+<p>All 26 tests pass. Live log output shows exactly what is being tested:</p>
 <pre is="marp-pre" data-auto-scaling="downscale-only"><code>tests/test_uid.py::test_matching_uid_plaintext
   scenario : rule uid=1001 (inspector) + exe=head → plaintext | run as inspector
   rule     : acl_id=2 prio=100  uid=1001 gid=*  exe=head  → plaintext
@@ -2731,16 +2901,16 @@ section.divider h1 {
   result   : exit=0
 PASSED
 
-tests/test_uid.py::test_wrong_uid_denied
-  scenario : rule uid=1001 | run as pi (uid=1000) → uid mismatch → expect EACCES
-  rule     : acl_id=2 prio=100  uid=1001 gid=*  exe=head  → plaintext
-  command  : pi (uid=1000 gid=1000)  runs head
-  result   : exit=1
+tests/test_inheritance.py::test_nested_inherits_plaintext
+  scenario : file two levels below tagged dir → plaintext via grandparent inheritance
+  rule     : acl_id=6 prio=100  uid=* gid=*  exe=head  → plaintext
+  command  : root (uid=0 gid=0)  runs head
+  result   : exit=0
 PASSED
 </code></pre>
 <footer>eCryptfs Custom ACL — Testing</footer>
 </section>
-</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="20" data-class="divider" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Testing" data-theme="gaia" data-style="section {
+</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="21" data-class="divider" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Testing" data-theme="gaia" data-style="section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
   font-size: 1.1rem;
 }
@@ -2801,7 +2971,7 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-" lang="en-US" class="divider" data-marpit-pagination="20" style="--class:divider;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Testing;--theme:gaia;--style:section {
+" lang="en-US" class="divider" data-marpit-pagination="21" style="--class:divider;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Testing;--theme:gaia;--style:section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
   font-size: 1.1rem;
 }
@@ -2862,166 +3032,10 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h1 id="05">05</h1>
 <h1 id="status--next-steps">Status &amp; Next Steps</h1>
 <footer>eCryptfs Custom ACL — Testing</footer>
-</section>
-</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="21" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Status" data-theme="gaia" data-style="section {
-  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
-  font-size: 1.1rem;
-}
-section.lead h1 {
-  font-size: 2.2rem;
-  color: #00d4ff;
-}
-section.lead h3 {
-  color: #a0c4ff;
-  font-weight: 300;
-}
-h2 {
-  color: #00d4ff;
-  border-bottom: 2px solid #00d4ff33;
-  padding-bottom: 0.2em;
-}
-table {
-  font-size: 0.85rem;
-  width: 100%;
-}
-th {
-  background: #00d4ff22;
-  color: #00d4ff;
-}
-code {
-  background: #ffffff15;
-  color: #ffd166;
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-}
-pre code {
-  background: transparent;
-  color: #a8ff78;
-  font-size: 0.8rem;
-}
-pre {
-  background: #0d0d1a;
-  border-left: 4px solid #00d4ff;
-  padding: 1em;
-}
-.columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5em;
-}
-footer {
-  color: #555577;
-  font-size: 0.7rem;
-}
-section.divider {
-  background: #0d0d1a;
-  justify-content: center;
-  align-items: center;
-}
-section.divider h1 {
-  color: #00d4ff;
-  font-size: 2.5rem;
-  border-left: 6px solid #00d4ff;
-  padding-left: 0.5em;
-}
-" lang="en-US" class="lead" data-marpit-pagination="21" style="--class:lead;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Status;--theme:gaia;--style:section {
-  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
-  font-size: 1.1rem;
-}
-section.lead h1 {
-  font-size: 2.2rem;
-  color: #00d4ff;
-}
-section.lead h3 {
-  color: #a0c4ff;
-  font-weight: 300;
-}
-h2 {
-  color: #00d4ff;
-  border-bottom: 2px solid #00d4ff33;
-  padding-bottom: 0.2em;
-}
-table {
-  font-size: 0.85rem;
-  width: 100%;
-}
-th {
-  background: #00d4ff22;
-  color: #00d4ff;
-}
-code {
-  background: #ffffff15;
-  color: #ffd166;
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-}
-pre code {
-  background: transparent;
-  color: #a8ff78;
-  font-size: 0.8rem;
-}
-pre {
-  background: #0d0d1a;
-  border-left: 4px solid #00d4ff;
-  padding: 1em;
-}
-.columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5em;
-}
-footer {
-  color: #555577;
-  font-size: 0.7rem;
-}
-section.divider {
-  background: #0d0d1a;
-  justify-content: center;
-  align-items: center;
-}
-section.divider h1 {
-  color: #00d4ff;
-  font-size: 2.5rem;
-  border-left: 6px solid #00d4ff;
-  padding-left: 0.5em;
-}
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
-<h2 id="current-status">Current Status</h2>
-<div class="columns">
-<div>
-<p><strong><img class="emoji" draggable="false" alt="✅" src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.2/assets/svg/2705.svg" data-marp-twemoji=""/> Completed</strong></p>
-<ul>
-<li>ACL data structures &amp; hash table</li>
-<li>xattr read (<code>trusted.ecryptfs_acl_id</code>)</li>
-<li>Debugfs management interface</li>
-<li>UID / GID / exe subject matching</li>
-<li>Three-point kernel enforcement</li>
-<li>Dual address_space (plaintext / ciphertext cache isolation)</li>
-<li>ciphertext read path (<code>vfs_iter_read</code>)</li>
-<li>21 automated tests — all passing</li>
-</ul>
-</div>
-<div>
-<p><strong><img class="emoji" draggable="false" alt="⏳" src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.2/assets/svg/23f3.svg" data-marp-twemoji=""/> Remaining</strong></p>
-<ul>
-<li><strong>Persistence</strong> (§12)<br />
-Rules lost on <code>rmmod</code> — need load/save to disk</li>
-<li><strong>Directory inheritance</strong> (§7)<br />
-Upward traversal to mount root</li>
-<li><strong>HASH matching mode</strong> (§9)<br />
-SHA-256 of executable binary</li>
-<li><strong>Stale inode re-resolve</strong> (§9)<br />
-Auto-recover when binary is upgraded</li>
-<li><strong>Userspace management tool</strong><br />
-CLI beyond debugfs</li>
-</ul>
-</div>
-</div>
-<footer>eCryptfs Custom ACL — Status</footer>
 </section>
 </foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="22" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Status" data-theme="gaia" data-style="section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
@@ -3145,7 +3159,162 @@ section.divider h1 {
   border-left: 6px solid #00d4ff;
   padding-left: 0.5em;
 }
-;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="23">
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
+<h2 id="current-status">Current Status</h2>
+<div class="columns">
+<div>
+<p><strong><img class="emoji" draggable="false" alt="✅" src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.2/assets/svg/2705.svg" data-marp-twemoji=""/> Completed</strong></p>
+<ul>
+<li>ACL data structures &amp; hash table</li>
+<li>xattr read (<code>trusted.ecryptfs_acl_id</code>)</li>
+<li>Debugfs management interface</li>
+<li>UID / GID / exe subject matching</li>
+<li>Three-point kernel enforcement</li>
+<li>Dual address_space (plaintext / ciphertext cache isolation)</li>
+<li>ciphertext read path (<code>vfs_iter_read</code>)</li>
+<li><strong>Directory inheritance</strong> — upward dentry walk to mount root</li>
+<li>26 automated tests — all passing</li>
+</ul>
+</div>
+<div>
+<p><strong><img class="emoji" draggable="false" alt="⏳" src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.2/assets/svg/23f3.svg" data-marp-twemoji=""/> Remaining</strong></p>
+<ul>
+<li><strong>Persistence</strong> (§12)<br />
+Rules lost on <code>rmmod</code> — need load/save to disk</li>
+<li><strong>HASH matching mode</strong> (§9)<br />
+SHA-256 of executable binary</li>
+<li><strong>Stale inode re-resolve</strong> (§9)<br />
+Auto-recover when binary is upgraded</li>
+<li><strong>Userspace management tool</strong><br />
+CLI beyond debugfs</li>
+</ul>
+</div>
+</div>
+<footer>eCryptfs Custom ACL — Status</footer>
+</section>
+</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="23" data-class="lead" data-paginate="true" data-background-color="#1a1a2e" data-color="#eaeaea" data-footer="eCryptfs Custom ACL — Status" data-theme="gaia" data-style="section {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1.1rem;
+}
+section.lead h1 {
+  font-size: 2.2rem;
+  color: #00d4ff;
+}
+section.lead h3 {
+  color: #a0c4ff;
+  font-weight: 300;
+}
+h2 {
+  color: #00d4ff;
+  border-bottom: 2px solid #00d4ff33;
+  padding-bottom: 0.2em;
+}
+table {
+  font-size: 0.85rem;
+  width: 100%;
+}
+th {
+  background: #00d4ff22;
+  color: #00d4ff;
+}
+code {
+  background: #ffffff15;
+  color: #ffd166;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: #a8ff78;
+  font-size: 0.8rem;
+}
+pre {
+  background: #0d0d1a;
+  border-left: 4px solid #00d4ff;
+  padding: 1em;
+}
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+footer {
+  color: #555577;
+  font-size: 0.7rem;
+}
+section.divider {
+  background: #0d0d1a;
+  justify-content: center;
+  align-items: center;
+}
+section.divider h1 {
+  color: #00d4ff;
+  font-size: 2.5rem;
+  border-left: 6px solid #00d4ff;
+  padding-left: 0.5em;
+}
+" lang="en-US" class="lead" data-marpit-pagination="23" style="--class:lead;--paginate:true;--background-color:#1a1a2e;--color:#eaeaea;--footer:eCryptfs Custom ACL — Status;--theme:gaia;--style:section {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1.1rem;
+}
+section.lead h1 {
+  font-size: 2.2rem;
+  color: #00d4ff;
+}
+section.lead h3 {
+  color: #a0c4ff;
+  font-weight: 300;
+}
+h2 {
+  color: #00d4ff;
+  border-bottom: 2px solid #00d4ff33;
+  padding-bottom: 0.2em;
+}
+table {
+  font-size: 0.85rem;
+  width: 100%;
+}
+th {
+  background: #00d4ff22;
+  color: #00d4ff;
+}
+code {
+  background: #ffffff15;
+  color: #ffd166;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: #a8ff78;
+  font-size: 0.8rem;
+}
+pre {
+  background: #0d0d1a;
+  border-left: 4px solid #00d4ff;
+  padding: 1em;
+}
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+}
+footer {
+  color: #555577;
+  font-size: 0.7rem;
+}
+section.divider {
+  background: #0d0d1a;
+  justify-content: center;
+  align-items: center;
+}
+section.divider h1 {
+  color: #00d4ff;
+  font-size: 2.5rem;
+  border-left: 6px solid #00d4ff;
+  padding-left: 0.5em;
+}
+;color:#eaeaea;background-color:#1a1a2e;background-image:none;" data-marpit-pagination-total="24">
 <h2 id="summary">Summary</h2>
 <br />
 <table>
@@ -3174,21 +3343,21 @@ section.divider h1 {
 </tr>
 <tr>
 <td><strong>Validated</strong></td>
-<td>21 automated tests covering all subject dimensions and outcomes</td>
+<td>26 automated tests covering all subject dimensions, outcomes, and inheritance</td>
 </tr>
 <tr>
 <td><strong>Codebase</strong></td>
-<td>~1500 lines added across 6 kernel source files</td>
+<td>~1600 lines added across 6 kernel source files</td>
 </tr>
 </tbody>
 </table>
 <br />
 <blockquote>
-<p>The core enforcement mechanism is complete and verified. Remaining items (persistence, inheritance) are additive — the foundation is solid.</p>
+<p>The core enforcement mechanism is complete and verified. Remaining items (persistence, HASH matching) are additive — the foundation is solid.</p>
 </blockquote>
 <footer>eCryptfs Custom ACL — Status</footer>
 </section>
-</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="23" data-class="lead" data-background-color="#1a1a2e" data-color="#eaeaea" data-theme="gaia" data-style="section {
+</foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="24" data-class="lead" data-background-color="#1a1a2e" data-color="#eaeaea" data-theme="gaia" data-style="section {
   font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
   font-size: 1.1rem;
 }
