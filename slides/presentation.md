@@ -67,6 +67,13 @@ style: |
     border-left: 6px solid #00d4ff;
     padding-left: 0.5em;
   }
+  .highlight {
+    background: #00d4ff18;
+    border-left: 4px solid #00d4ff;
+    padding: 0.6em 1em;
+    margin-top: 0.8em;
+    font-size: 1rem;
+  }
 ---
 
 <!-- _class: lead -->
@@ -77,7 +84,35 @@ style: |
 
 <br>
 
-**Linux 5.15 · Out-of-tree Module · Kernel C**
+**Project Implementation Report**
+
+<br>
+
+Presented by: **Frank**
+Supervised by: **Prof. Yang**
+
+**Technical Stack:** Linux 5.15 | Out-of-tree Module | Kernel C
+**Date:** March 2026
+
+---
+<!-- _paginate: false -->
+<!-- footer: '' -->
+
+## Big Picture
+
+<br>
+
+- **Problem** — eCryptfs encrypts files but has no control over *who reads what*
+- **Solution** — Kernel-level ACL that decides not just allow/deny, but *what data is returned*
+- **Key result** — Same file → different data per process, enforced in kernel space
+
+<br>
+
+<div class="highlight">
+
+⭐ Two processes can both be *allowed* to open the same file yet receive completely different bytes — one gets plaintext, the other raw ciphertext.
+
+</div>
 
 ---
 <!-- _class: divider -->
@@ -95,7 +130,7 @@ eCryptfs is a **stacked cryptographic filesystem** built into the Linux kernel.
 - Sits between the VFS layer and a lower filesystem (ext4, etc.)
 - Transparently **encrypts files** on write, **decrypts** on read
 - Each file carries its own encryption metadata in the header
-- Used in Ubuntu home directory encryption, embedded systems, secure storage
+- Mainline Linux since 2.6.19 · secure storage · embedded systems
 
 <br>
 
@@ -120,13 +155,13 @@ eCryptfs has **no fine-grained access control** beyond standard POSIX permission
 | Limitation | Impact |
 |---|---|
 | Any permitted process reads **plaintext** | No isolation between processes |
-| No per-process content control | Cannot serve ciphertext to one process, plaintext to another |
+| No per-process content control | Cannot serve ciphertext to one, plaintext to another |
 | No identity-based rules | Cannot restrict by UID, GID, or executable |
 | Single permission model | Cannot have read-only ciphertext access |
 
 <br>
 
-> **Need**: A second enforcement layer that runs **after** POSIX checks and controls **who gets what data** — not just whether access is allowed.
+> **Need**: A second enforcement layer — controls **who gets what data**, not just whether access is allowed.
 
 ---
 
@@ -149,31 +184,112 @@ Design and implement an **internal ACL system** for a custom eCryptfs module tha
 <!-- _class: divider -->
 
 # 02
+# Key Contributions
+
+---
+<!-- footer: 'eCryptfs Custom ACL — Key Contributions' -->
+
+## Key Contributions
+
+Three deliverables, each independently verifiable:
+
+<br>
+
+| # | Deliverable | What it shows |
+|---|---|---|
+| **1** | Requirements & Design Document | Problem understanding; method selection |
+| **2** | Kernel Implementation | ~1,600 lines across 6 files; working module |
+| **3** | Automated Test Suite | 32 tests; every ACL dimension verified |
+
+---
+
+## 1 — Requirements & Design Document
+
+`doc/acl_srs_en.md` · v6.0 · 18 sections
+
+Key decisions made during design:
+
+- **Access model**: three-dimensional (Subject × Permission × Content Mode) — beyond simple allow/deny
+- **Process identity**: match by dev+inode number, resolved at rule-insertion time — stable and fast
+- **Dual page cache**: two independent `address_space` per inode — no cross-contamination between plaintext and ciphertext readers
+- **Inheritance**: dynamic upward walk at access time — no xattr duplication on file creation
+
+---
+
+## 2 — Kernel Implementation
+
+<div class="columns">
+
+<div>
+
+**New files**
+- `acl.h` — data structures, constants, API
+- `acl.c` — ACL engine, dual cache, debugfs
+
+**Modified files**
+- `ecryptfs_kernel.h` — inode info fields
+- `inode.c` — permission check, inheritance
+- `file.c` — content mode, ciphertext read path
+- `super.c` — inode lifecycle hooks
+
+</div>
+
+<div>
+
+**Environment**
+- Kernel: Linux 5.15.196 (out-of-tree module)
+- Build: `make` against kernel headers
+- Load: `insmod ecryptfs.ko`
+- Manage: debugfs interface
+
+<br>
+
+~**1,600 lines** added across 6 files
+
+</div>
+</div>
+
+---
+
+## 3 — Automated Test Suite
+
+`tests/` · Python + pytest · **32 tests · all passing**
+
+<br>
+
+- **Black-box behavioural**: real binaries, real mounted files, real users
+- `fork + setuid + exec` — kernel sees authentic uid, gid, and exe path
+
+<br>
+
+Covers: UID / GID / executable matching · plaintext / ciphertext / deny outcomes · priority ordering · directory inheritance · permission bits (r / w / rw)
+
+---
+<!-- _class: divider -->
+
+# 03
 # Design
 
 ---
 <!-- footer: 'eCryptfs Custom ACL — Design' -->
 
-## Access Decision Model
+## Access Model
 
 Every access decision has **three dimensions**:
 
 <br>
 
-```
-Subject         →  WHO  is accessing
-  uid / gid / process executable (AND logic)
-
-Permission      →  WHAT operations are allowed
-  r / w / x  (intersected with system permissions)
-
-Content Mode    →  WHAT DATA is returned
-  plaintext | ciphertext | deny
-```
+- **Subject** — WHO: uid + gid + process executable (AND logic)
+- **Permission** — WHAT operations: r / w / x (intersected with system permissions)
+- **Content Mode** — WHAT DATA is returned: `plaintext` | `ciphertext` | `deny`
 
 <br>
 
-> The content mode is unique to this system — standard ACLs only control allow/deny. Here, two processes can both be **allowed** but receive **different data** from the same file.
+<div class="highlight">
+
+Standard ACLs control only allow/deny. This system also controls **what bytes the process receives** — two allowed processes can get different data from the same file.
+
+</div>
 
 ---
 
@@ -212,260 +328,194 @@ Rules sorted by priority ↓
 ```
 
 Max **64 rules** per ACL ID.
-Higher number = evaluated first.
 
 </div>
 </div>
 
 ---
 
-## Three-Point Enforcement Architecture
+## Three-Point Enforcement
 
 ```
 Process opens file
         │
         ▼
-POINT 1 — ecryptfs_permission()          [inode.c]
-  Stage 1: inode_permission(lower)   →   standard POSIX check
-  Stage 2: ecryptfs_acl_check()      →   ACL allow / deny gate
+POINT 1 — ecryptfs_permission()       [inode.c]
+  Stage 1: system POSIX check
+  Stage 2: ACL allow / deny gate
         │
         ▼  (allowed)
-POINT 2 — ecryptfs_open()               [file.c]
-  Query ACL → PLAINTEXT or CIPHERTEXT mode
-  Store mode in per-fd:  file_info->content_mode
+POINT 2 — ecryptfs_open()             [file.c]
+  Decide content mode → store per-fd
         │
         ▼
-POINT 3 — ecryptfs_read_update_atime()  [file.c]
-  PLAINTEXT  → generic_file_read_iter()   page cache + decrypt
-  CIPHERTEXT → vfs_iter_read(lower_file)  bypass cache, raw bytes
+POINT 3 — ecryptfs_read()             [file.c]
+  PLAINTEXT  → decrypt from page cache
+  CIPHERTEXT → read raw bytes from lower file
 ```
 
-> A single enforcement point is insufficient — content mode selection requires per-fd state, and ciphertext readers must bypass the eCryptfs page cache entirely.
+> Three points are needed: content mode requires per-fd state; ciphertext must bypass the eCryptfs page cache entirely.
 
 ---
 
-## Dual Address Space Design
+## Dual Address Space ⭐
 
-The same inode must serve **different data** to different processes simultaneously.
+The same inode serves **different data** to different processes simultaneously.
 
 <br>
 
 ```
-                    ┌─────────────────────────────┐
-                    │        eCryptfs inode        │
-                    │                              │
-  head (plaintext)  │   i_mapping  →  page cache   │  ← decrypted pages
-                    │   (standard)                 │
-                    │                              │
-  cat (ciphertext)  │   ciphertext_mapping  →  ?   │  ← raw encrypted pages
-                    │   (second address_space)     │
-                    └─────────────────────────────┘
+                    ┌──────────────────────────────┐
+                    │        eCryptfs inode         │
+  head (plaintext)  │   i_mapping  →  page cache    │ ← decrypted pages
+                    │                               │
+  cat (ciphertext)  │   ciphertext_mapping          │ ← raw encrypted pages
+                    │   (second address_space)      │
+                    └──────────────────────────────┘
                                    │
-                              lower inode
-                           (ext4 ciphertext)
+                              lower inode (ext4)
 ```
 
 <br>
 
-Two independent page caches per inode — no cross-contamination between plaintext and ciphertext readers.
+Two independent page caches — no cross-contamination. This is the core innovation.
 
 ---
 
 ## Storage Model
 
-**File side — xattr on lower inode:**
+- **Per-file**: 2-byte xattr `trusted.ecryptfs_acl_id` on the lower inode
+- **In kernel**: per-mount hash table maps ACL ID → sorted rule list (max 64 rules)
+- **Inheritance**: no xattr on file → walk up dentry tree to nearest tagged ancestor
 
-```bash
-trusted.ecryptfs_acl_id = 0x0001   # big-endian uint16, 2 bytes
-```
-
-**Kernel side — per-mount hash table:**
+<br>
 
 ```
 acl_table (per mount)
-  └── bucket[hash(acl_id)]
-        └── ecryptfs_acl_entry  (acl_id=1)
-              ├── rule[0]  prio=100  uid=*    exe=cat   → ciphertext
-              ├── rule[1]  prio=50   uid=1001 exe=head  → plaintext
-              └── ...  (max 64 rules)
+  └── ecryptfs_acl_entry  (acl_id=1)
+        ├── rule[0]  prio=100  exe=cat   → ciphertext
+        ├── rule[1]  prio=50   exe=head  → plaintext
+        └── ...
 ```
 
-> The xattr stores only a 2-byte index. All rule data lives in kernel memory — fast pointer traversal, no per-access xattr reads after first lookup.
-
----
-<!-- _class: divider -->
-
-# 03
-# Implementation
-
----
-<!-- footer: 'eCryptfs Custom ACL — Implementation' -->
-
-## What Was Built
-
-Four implementation phases, all complete:
-
-| Phase | Deliverable | Key Files |
-|---|---|---|
-| **1** | Data structures, xattr read, hash table, module init | `acl.h`, `acl.c`, `ecryptfs_kernel.h` |
-| **2** | Debugfs management interface (`add`/`clear`/`list`), xattr wiring | `acl.c`, `inode.c` |
-| **3** | Process matching (dev+ino), ciphertext read path, permission enforcement | `file.c`, `inode.c`, `acl.c` |
-| **4** | Directory inheritance — upward dentry walk to mount root (SRS §7) | `acl.c` |
-
-<br>
-
-**New files:** `acl.h`, `acl.c`
-**Modified files:** `ecryptfs_kernel.h`, `inode.c`, `file.c`, `super.c`, `Makefile`
-
----
-
-## Key Implementation Decisions
-
-<br>
-
-| Decision | Reason |
-|---|---|
-| `vfs_iter_read(lower_file)` for ciphertext | `generic_file_read_iter` has a size-bound bug via the eCryptfs page cache |
-| Process matching via **dev + inode** (not path) | Path comparison is namespace-dependent; inode number is stable |
-| Inode resolved at **rule-insertion time** via `kern_path()` | Avoids path lookup on every file access (hot path) |
-| Default when acl_id set but **no rule matches** → DENY | Fail-closed: explicit rules required, no accidental allow |
-| Default when **no xattr** → pass-through | Backward compatible with existing unprotected files |
-| Inheritance walk capped at **32 levels** | Guards against cycles or pathologically deep trees |
-| Ciphertext perm-stripping **skipped for directories** | Directories need `MAY_EXEC` for traversal; they serve no file data |
-
----
-
-## Rule Management — Debugfs Interface
-
-Rules are managed by writing commands to a debugfs control file:
-
-```bash
-# Add a rule
-echo "add <acl_id> <priority> <uid|*> <gid|*> <exe|*> <perm> <content>" \
-  | sudo tee /sys/kernel/debug/ecryptfs_acl/0/control
-
-# Clear all rules for an ACL ID
-echo "clear 1" | sudo tee /sys/kernel/debug/ecryptfs_acl/0/control
-
-# View all rules
-sudo cat /sys/kernel/debug/ecryptfs_acl/0/rules
-```
-
-**Tag a file** or **a directory** (all files inside inherit the rules):
-```bash
-# Tag a single file
-setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/secret.txt
-
-# Tag a directory — every file/subdir inside inherits ACL ID 1
-setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/private/
-```
-
----
-
-## Directory Inheritance (SRS §7)
-
-A file with **no xattr of its own** inherits the ACL from the nearest tagged ancestor.
-
-```
-/data.enc/
-  private/          ← trusted.ecryptfs_acl_id = 0x0001
-    report.pdf      ← no xattr  →  inherits ACL 1
-    sub/            ← no xattr
-      notes.txt     ← no xattr  →  inherits ACL 1  (grandparent walk)
-```
-
-**Walk algorithm** — resolved lazily on first access:
-
-```
-file inode  →  read own xattr  →  NONE?
-                │
-                ▼
-          dget_parent(dentry)
-                │
-         check parent xattr  →  found? → use it
-                │ (NONE)
-         dget_parent again  → … up to mount root
-                │ (still NONE)
-         pass-through (allow-all)
-```
-
-> Capped at 32 ancestor levels. Cached per-inode after first resolve.
+> xattr stores only a 2-byte index — fast lookup, no per-access xattr reads after first resolve.
 
 ---
 <!-- _class: divider -->
 
 # 04
-# Testing
+# Implementation
 
 ---
-<!-- footer: 'eCryptfs Custom ACL — Testing' -->
+<!-- footer: 'eCryptfs Custom ACL — Implementation' -->
 
-## Test Strategy
+## Implementation Overview
 
-**Language:** Python + pytest
-**Approach:** Black-box behavioral tests — run real binaries against real mounted files
+Four phases, all complete:
 
-<br>
-
-Key enabler — user identity switching without `sudo`:
-```python
-def run(binary, path, uid=0, gid=0):
-    def _set_ids():
-        os.setgid(gid)   # must be before setuid
-        os.setuid(uid)
-    return subprocess.run([binary, path],
-                          capture_output=True,
-                          preexec_fn=_set_ids)
-```
-
-`fork + setuid + exec` — the kernel sees the **correct uid and exe path**.
-No wrapper process in between.
+| Phase | Deliverable |
+|---|---|
+| **1** | Data structures, xattr read, hash table, module init |
+| **2** | Debugfs management interface (`add` / `clear` / `list`) |
+| **3** | Process matching (dev+ino), ciphertext read path, permission enforcement |
+| **4** | Directory inheritance — upward dentry walk to mount root |
 
 ---
 
-## Test Coverage
+## Key Decisions
 
-| File | Scenario | Tests |
-|---|---|---|
-| `test_rules.py` | Debugfs: add / clear / list / invalid cmd | 4 |
-| `test_basic.py` | Exe-only rules: passthrough / plaintext / ciphertext / deny | 4 |
-| `test_uid.py` | UID matching: match→plain, match→cipher, mismatch→deny, wildcard | 4 |
-| `test_gid.py` | GID matching: match→plain, match→cipher, mismatch→deny | 3 |
-| `test_combined.py` | AND logic: all match, uid fail, exe fail | 4 |
-| `test_priority.py` | Priority ordering: cipher wins, plaintext wins | 2 |
-| `test_inheritance.py` | Directory inheritance: child plain/cipher/deny, nested plain/deny | 5 |
-| **Total** | | **26 tests** |
-
-<br>
-
-Test users: `root` (uid=0), `pi` (uid=1000), `inspector` (uid=1001)
+| Decision | Why |
+|---|---|
+| `vfs_iter_read(lower_file)` for ciphertext | `generic_file_read_iter` has a size-bound bug through the eCryptfs page cache |
+| Process match via **dev + inode** (not path) | Path is namespace-dependent; inode number is stable |
+| Resolve inode at **rule-insertion time** | Avoids `kern_path()` lookup on every file access |
+| No xattr → **pass-through** | Backward compatible with existing unprotected files |
 
 ---
 
-## Test Results
+## Rule Management
 
-All 26 tests pass. Live log output shows exactly what is being tested:
+Rules are managed via a debugfs control file:
+
+```bash
+# Add a rule
+echo "add 1 100 * * /usr/bin/head r plaintext" \
+  | sudo tee /sys/kernel/debug/ecryptfs_acl/0/control
+
+# View rules
+sudo cat /sys/kernel/debug/ecryptfs_acl/0/rules
+```
+
+**Tag a file or directory:**
+```bash
+# Tag a directory — every file inside inherits the rules
+setfattr -n trusted.ecryptfs_acl_id -v 0x0001 /data.enc/private/
+```
+
+---
+
+## Directory Inheritance
+
+A file with **no xattr** inherits the ACL from the nearest tagged ancestor.
 
 ```
-tests/test_uid.py::test_matching_uid_plaintext
-  scenario : rule uid=1001 (inspector) + exe=head → plaintext | run as inspector
-  rule     : acl_id=2 prio=100  uid=1001 gid=*  exe=head  → plaintext
-  command  : inspector (uid=1001 gid=1001)  runs head
-  result   : exit=0
-PASSED
-
-tests/test_inheritance.py::test_nested_inherits_plaintext
-  scenario : file two levels below tagged dir → plaintext via grandparent inheritance
-  rule     : acl_id=6 prio=100  uid=* gid=*  exe=head  → plaintext
-  command  : root (uid=0 gid=0)  runs head
-  result   : exit=0
-PASSED
+/data.enc/
+  private/        ← acl_id = 0x0001
+    report.pdf    ← no xattr → inherits ACL 1
+    sub/
+      notes.txt   ← no xattr → inherits ACL 1 (grandparent)
 ```
+
+- Walk is **dynamic** — resolved lazily on first access, then cached per-inode
+- Stops at the eCryptfs mount root; capped at 32 levels
 
 ---
 <!-- _class: divider -->
 
 # 05
+# Testing
+
+---
+<!-- footer: 'eCryptfs Custom ACL — Testing' -->
+
+## Testing
+
+**32 automated tests · Python + pytest · all passing**
+
+<br>
+
+- **Black-box**: real binaries (`cat`, `head`, `dd`) run against real mounted encrypted files
+- **Real identity**: `fork + setuid + exec` — kernel sees authentic uid, gid, and exe path
+
+<br>
+
+Covers:
+- UID / GID / executable matching and AND logic
+- All three outcomes: plaintext · ciphertext · deny
+- Priority ordering · directory inheritance · permission bits (r / w / rw)
+
+---
+
+## Test Results
+
+```
+tests/test_uid.py::test_matching_uid_plaintext
+  scenario : uid=1001 + exe=head → plaintext
+  result   : exit=0  PASSED
+
+tests/test_inheritance.py::test_nested_inherits_plaintext
+  scenario : file two levels below tagged dir → inherits plaintext
+  result   : exit=0  PASSED
+
+tests/test_permissions.py::test_perm_r_denies_write
+  scenario : perm=r, dd tries to write → denied
+  result   : exit=1  PASSED
+```
+
+---
+<!-- _class: divider -->
+
+# 06
 # Status & Next Steps
 
 ---
@@ -484,25 +534,25 @@ PASSED
 - Debugfs management interface
 - UID / GID / exe subject matching
 - Three-point kernel enforcement
-- Dual address_space (plaintext / ciphertext cache isolation)
-- ciphertext read path (`vfs_iter_read`)
-- **Directory inheritance** — upward dentry walk to mount root
-- 26 automated tests — all passing
+- Dual address_space (cache isolation)
+- Ciphertext read path
+- Directory inheritance
+- 32 automated tests — all passing
 
 </div>
 
 <div>
 
-**⏳ Remaining**
+**🔜 Next Steps**
 
-- **Persistence** (§12)
-  Rules lost on `rmmod` — need load/save to disk
-- **HASH matching mode** (§9)
+- **Persistence**
+  Save/load rules across reboot
+- **Stronger process matching**
   SHA-256 of executable binary
-- **Stale inode re-resolve** (§9)
+- **Stale inode re-resolve**
   Auto-recover when binary is upgraded
-- **Userspace management tool**
-  CLI beyond debugfs
+- **Userspace CLI**
+  Management tool beyond debugfs
 
 </div>
 </div>
@@ -513,18 +563,18 @@ PASSED
 
 <br>
 
-| What | Detail |
+| | |
 |---|---|
 | **Built** | Custom ACL layer inside eCryptfs kernel module |
+| **Access model** | Subject × Permission × Content Mode |
+| **Core innovation** | Same inode → different data per process (dual address_space) |
 | **Enforcement** | Three kernel hook points — permission, open, read |
-| **Access model** | Subject (uid+gid+exe) × Permission × Content mode |
-| **Content control** | Same inode → different data per process (dual address_space) |
-| **Validated** | 26 automated tests covering all subject dimensions, outcomes, and inheritance |
-| **Codebase** | ~1600 lines added across 6 kernel source files |
+| **Validated** | 32 automated tests — all passing |
+| **Codebase** | ~1,600 lines across 6 kernel source files |
 
 <br>
 
-> The core enforcement mechanism is complete and verified. Remaining items (persistence, HASH matching) are additive — the foundation is solid.
+> Core enforcement is complete and verified. Next steps are additive — the foundation is solid.
 
 ---
 <!-- _class: lead -->
@@ -537,9 +587,9 @@ PASSED
 
 **Repository:** `github.com/netcaf/myecryptfs`
 
+**Design document:** `doc/acl_srs_en.md`
+
 **Run tests:**
 ```bash
 sudo pytest tests/ -v
 ```
-
-**Design document:** `doc/acl_srs.md`
